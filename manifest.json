@@ -1,0 +1,12 @@
+{
+  "display_name": "🥟 包子同好會",
+  "loading_order": 100,
+  "requires": [],
+  "optional": [],
+  "js": "index.js",
+  "css": "style.css",
+  "author": "Tammy & Claude",
+  "version": "1.0.0",
+  "homePage": "https://github.com/",
+  "auto_update": false
+}

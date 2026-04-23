@@ -1,0 +1,940 @@
+/* ============================================================
+   🥟 包子同好會 - 可愛風配色樣式
+   ============================================================
+   主色調：奶油黃 + 蜜桃粉 + 溫暖的米白
+   ============================================================ */
+
+/* ---------- 色彩變數 ---------- */
+:root {
+    --baozi-cream: #FFF8EC;
+    --baozi-cream-dark: #F5E6C8;
+    --baozi-peach: #FFB5A7;
+    --baozi-peach-light: #FFD6CE;
+    --baozi-yellow: #FFD66B;
+    --baozi-yellow-light: #FFE9A8;
+    --baozi-brown: #8B5A3C;
+    --baozi-brown-soft: #B88968;
+    --baozi-pink: #F4A5B5;
+    --baozi-mint: #A8D8C9;
+    --baozi-shadow: rgba(139, 90, 60, 0.15);
+    --baozi-shadow-strong: rgba(139, 90, 60, 0.25);
+}
+
+/* ---------- 浮動按鈕（右下角小包子） ---------- */
+#baozi-float-btn {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    width: 58px;
+    height: 58px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--baozi-cream) 0%, var(--baozi-cream-dark) 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 30px;
+    cursor: pointer;
+    box-shadow: 0 4px 16px var(--baozi-shadow-strong);
+    z-index: 9998;
+    transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    border: 2px solid var(--baozi-cream-dark);
+    user-select: none;
+}
+
+#baozi-float-btn:hover {
+    transform: scale(1.1) rotate(-8deg);
+    box-shadow: 0 6px 24px var(--baozi-shadow-strong);
+}
+
+#baozi-float-btn.baozi-dragging {
+    transition: none;
+    transform: scale(1.15);
+    cursor: grabbing;
+    opacity: 0.9;
+}
+
+#baozi-float-btn:active {
+    transform: scale(0.95);
+}
+
+/* ---------- 拖曳提示小點（桌面版標題列） ---------- */
+.baozi-drag-hint {
+    margin-left: auto;
+    margin-right: 8px;
+    color: var(--baozi-brown-soft);
+    opacity: 0.4;
+    font-size: 14px;
+    letter-spacing: -2px;
+    user-select: none;
+}
+
+/* ---------- 背景遮罩（點擊可關閉面板） ---------- */
+#baozi-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.3);
+    z-index: 99998;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s;
+}
+
+#baozi-overlay.baozi-open {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+/* ---------- 主面板 ---------- */
+#baozi-panel {
+    position: fixed;
+    bottom: 94px;
+    right: 24px;
+    width: 380px;
+    max-height: 640px;
+    background: var(--baozi-cream);
+    border-radius: 20px;
+    box-shadow: 0 10px 40px var(--baozi-shadow-strong);
+    z-index: 99999;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    transform: scale(0.8) translateY(20px);
+    opacity: 0;
+    pointer-events: none;
+    transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+    font-family: -apple-system, "SF Pro Text", "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif;
+    color: var(--baozi-brown);
+}
+
+#baozi-panel.baozi-open {
+    transform: scale(1) translateY(0);
+    opacity: 1;
+    pointer-events: auto;
+}
+
+/* ---------- 標題列 ---------- */
+.baozi-header {
+    padding: 14px 18px;
+    background: linear-gradient(135deg, var(--baozi-yellow-light) 0%, var(--baozi-peach-light) 100%);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 2px dashed var(--baozi-cream-dark);
+}
+
+.baozi-logo {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--baozi-brown);
+    letter-spacing: 0.5px;
+}
+
+.baozi-close {
+    cursor: pointer;
+    font-size: 18px;
+    color: var(--baozi-brown-soft);
+    padding: 4px 8px;
+    border-radius: 50%;
+    transition: all 0.2s;
+}
+
+.baozi-close:hover {
+    background: rgba(139, 90, 60, 0.1);
+    color: var(--baozi-brown);
+}
+
+/* ---------- 內容區 ---------- */
+.baozi-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+    color: var(--baozi-brown);
+}
+
+.baozi-body::-webkit-scrollbar {
+    width: 8px;
+}
+.baozi-body::-webkit-scrollbar-track {
+    background: transparent;
+}
+.baozi-body::-webkit-scrollbar-thumb {
+    background: var(--baozi-peach-light);
+    border-radius: 4px;
+}
+.baozi-body::-webkit-scrollbar-thumb:hover {
+    background: var(--baozi-peach);
+}
+
+/* ---------- 登入畫面 ---------- */
+.baozi-welcome {
+    text-align: center;
+    padding: 20px 10px;
+}
+
+.baozi-big-emoji {
+    font-size: 56px;
+    animation: baozi-bounce 2s infinite ease-in-out;
+}
+
+@keyframes baozi-bounce {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-8px); }
+}
+
+.baozi-welcome h2 {
+    margin: 10px 0 6px;
+    font-size: 18px;
+    color: var(--baozi-brown);
+}
+
+.baozi-welcome p {
+    margin: 0;
+    font-size: 13px;
+    color: var(--baozi-brown-soft);
+}
+
+/* ---------- 表單 ---------- */
+.baozi-form {
+    padding: 8px 4px;
+}
+
+.baozi-form label {
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--baozi-brown);
+    margin: 12px 0 6px;
+}
+
+.baozi-form input[type="text"],
+.baozi-form input[type="password"],
+.baozi-form textarea {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 10px 12px;
+    border: 2px solid var(--baozi-cream-dark);
+    border-radius: 12px;
+    background: white;
+    font-size: 14px;
+    color: var(--baozi-brown);
+    font-family: inherit;
+    transition: all 0.2s;
+    outline: none;
+}
+
+.baozi-form input[type="text"]:focus,
+.baozi-form input[type="password"]:focus,
+.baozi-form textarea:focus {
+    border-color: var(--baozi-peach);
+    box-shadow: 0 0 0 3px var(--baozi-peach-light);
+}
+
+.baozi-form textarea {
+    resize: vertical;
+    line-height: 1.5;
+}
+
+/* ---------- 按鈕 ---------- */
+.baozi-btn-primary {
+    background: linear-gradient(135deg, var(--baozi-peach) 0%, var(--baozi-pink) 100%);
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 12px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-family: inherit;
+    margin-top: 16px;
+    box-shadow: 0 2px 8px rgba(244, 165, 181, 0.4);
+}
+
+.baozi-btn-primary:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(244, 165, 181, 0.5);
+}
+
+.baozi-btn-primary:active {
+    transform: translateY(0);
+}
+
+.baozi-btn-full {
+    width: 100%;
+}
+
+.baozi-btn-small {
+    background: var(--baozi-cream);
+    color: var(--baozi-brown);
+    border: 1.5px solid var(--baozi-cream-dark);
+    padding: 5px 10px;
+    border-radius: 8px;
+    font-size: 12px;
+    cursor: pointer;
+    font-family: inherit;
+    transition: all 0.2s;
+    margin-right: 4px;
+}
+
+.baozi-btn-small:hover {
+    background: var(--baozi-yellow-light);
+    border-color: var(--baozi-yellow);
+}
+
+.baozi-btn-small:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.baozi-btn-danger {
+    background: #FFE4E1;
+    color: #C44536;
+    border: 1.5px solid #FFB5AC;
+}
+
+.baozi-btn-danger:hover {
+    background: #FFCCC5;
+}
+
+/* ---------- 錯誤訊息 ---------- */
+.baozi-error {
+    color: #C44536;
+    font-size: 13px;
+    margin-top: 10px;
+    padding: 8px 10px;
+    background: #FFE4E1;
+    border-radius: 8px;
+    min-height: 18px;
+}
+
+.baozi-error:empty {
+    display: none;
+}
+
+.baozi-global-error {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: #FFE4E1;
+    color: #C44536;
+    padding: 12px 20px;
+    border-radius: 12px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+    z-index: 10000;
+    font-family: -apple-system, "Noto Sans TC", sans-serif;
+}
+
+/* ---------- 首頁選單 ---------- */
+.baozi-greeting {
+    background: white;
+    padding: 14px 16px;
+    border-radius: 14px;
+    margin-bottom: 16px;
+    font-size: 14px;
+    box-shadow: 0 2px 8px var(--baozi-shadow);
+}
+
+.baozi-greeting b {
+    color: var(--baozi-peach);
+}
+
+.baozi-menu {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+
+.baozi-menu-btn {
+    background: white;
+    border: 2px solid transparent;
+    border-radius: 16px;
+    padding: 18px 10px;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--baozi-brown);
+    transition: all 0.2s;
+    box-shadow: 0 2px 8px var(--baozi-shadow);
+}
+
+.baozi-menu-btn:hover {
+    transform: translateY(-2px);
+    border-color: var(--baozi-peach-light);
+    box-shadow: 0 6px 16px var(--baozi-shadow-strong);
+}
+
+.baozi-menu-icon {
+    font-size: 28px;
+}
+
+/* ---------- 子畫面通用 ---------- */
+.baozi-screen-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 14px;
+    padding-bottom: 10px;
+    border-bottom: 1.5px dashed var(--baozi-cream-dark);
+}
+
+.baozi-screen-header h3 {
+    margin: 0;
+    font-size: 15px;
+    color: var(--baozi-brown);
+}
+
+.baozi-back {
+    background: transparent;
+    border: none;
+    color: var(--baozi-brown-soft);
+    font-size: 13px;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 8px;
+    font-family: inherit;
+    transition: all 0.2s;
+}
+
+.baozi-back:hover {
+    background: var(--baozi-cream-dark);
+    color: var(--baozi-brown);
+}
+
+/* ---------- 列表 ---------- */
+.baozi-list {
+    margin-top: 14px;
+}
+
+.baozi-card {
+    background: white;
+    border-radius: 14px;
+    padding: 12px 14px;
+    margin-bottom: 10px;
+    box-shadow: 0 2px 8px var(--baozi-shadow);
+    border: 1.5px solid transparent;
+    transition: all 0.2s;
+}
+
+.baozi-card:hover {
+    border-color: var(--baozi-peach-light);
+}
+
+.baozi-card-owner {
+    font-size: 12px;
+    color: var(--baozi-pink);
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+
+.baozi-card-title {
+    font-weight: 700;
+    font-size: 14px;
+    color: var(--baozi-brown);
+    margin-bottom: 6px;
+}
+
+.baozi-card-preface {
+    font-size: 13px;
+    color: var(--baozi-peach);
+    font-style: italic;
+    margin-bottom: 6px;
+}
+
+.baozi-card-content {
+    font-size: 13px;
+    color: var(--baozi-brown-soft);
+    line-height: 1.6;
+    margin-bottom: 10px;
+    word-break: break-word;
+    white-space: pre-wrap;
+}
+
+.baozi-card-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    align-items: center;
+}
+
+.baozi-tag-shared {
+    background: var(--baozi-mint);
+    color: #2D6A5A;
+    padding: 3px 8px;
+    border-radius: 8px;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.baozi-tag-mine {
+    background: var(--baozi-yellow-light);
+    color: var(--baozi-brown);
+    padding: 3px 8px;
+    border-radius: 8px;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+/* ---------- 空狀態、載入 ---------- */
+.baozi-empty {
+    text-align: center;
+    padding: 40px 20px;
+    color: var(--baozi-brown-soft);
+    font-size: 13px;
+}
+
+.baozi-empty-small {
+    text-align: center;
+    padding: 10px;
+    color: var(--baozi-brown-soft);
+    font-size: 12px;
+}
+
+.baozi-loading {
+    text-align: center;
+    padding: 30px;
+    color: var(--baozi-brown-soft);
+    font-size: 13px;
+}
+
+/* ---------- 打碼相關 ---------- */
+.baozi-masked {
+    background: var(--baozi-brown);
+    color: var(--baozi-brown);
+    border-radius: 3px;
+    padding: 0 3px;
+    cursor: pointer;
+    user-select: none;
+    transition: all 0.2s;
+}
+
+.baozi-masked:hover {
+    background: var(--baozi-brown-soft);
+}
+
+.baozi-masked-revealed {
+    background: var(--baozi-yellow-light);
+    color: var(--baozi-brown);
+}
+
+.baozi-mask-controls {
+    display: flex;
+    gap: 6px;
+    margin: 8px 0;
+}
+
+.baozi-mask-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin: 8px 0;
+}
+
+.baozi-mask-chip {
+    background: var(--baozi-peach-light);
+    color: var(--baozi-brown);
+    padding: 3px 8px;
+    border-radius: 8px;
+    font-size: 11px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.baozi-mask-remove {
+    cursor: pointer;
+    font-weight: 700;
+    opacity: 0.6;
+}
+
+.baozi-mask-remove:hover {
+    opacity: 1;
+}
+
+.baozi-preview {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--baozi-brown-soft);
+    margin-top: 10px;
+}
+
+.baozi-preview-box {
+    background: var(--baozi-cream-dark);
+    border-radius: 10px;
+    padding: 10px 12px;
+    font-size: 13px;
+    color: var(--baozi-brown);
+    min-height: 30px;
+    max-height: 150px;
+    overflow-y: auto;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+/* ---------- 吐槽留言 ---------- */
+.baozi-comments {
+    margin-top: 10px;
+    padding: 10px;
+    background: var(--baozi-cream);
+    border-radius: 10px;
+}
+
+.baozi-comment {
+    font-size: 12px;
+    color: var(--baozi-brown);
+    padding: 6px 0;
+    border-bottom: 1px dashed var(--baozi-cream-dark);
+    line-height: 1.5;
+}
+
+.baozi-comment:last-of-type {
+    border-bottom: none;
+}
+
+.baozi-comment b {
+    color: var(--baozi-pink);
+}
+
+.baozi-comment-input {
+    display: flex;
+    gap: 6px;
+    margin-top: 8px;
+    align-items: stretch;
+    /* 用 flex 確保按鈕永遠有位置 */
+    flex-wrap: nowrap;
+}
+
+.baozi-comment-input input {
+    flex: 1 1 auto;
+    min-width: 0;  /* 允許縮小以避免擠掉按鈕 */
+    padding: 6px 10px;
+    border: 1.5px solid var(--baozi-cream-dark);
+    border-radius: 8px;
+    font-size: 12px;
+    font-family: inherit;
+    outline: none;
+    background: white;
+    color: var(--baozi-brown);
+}
+
+.baozi-comment-input input:focus {
+    border-color: var(--baozi-peach);
+}
+
+.baozi-comment-input button {
+    flex: 0 0 auto;  /* 按鈕不能被壓縮 */
+    white-space: nowrap;
+}
+
+/* ---------- 首次設定畫面 ---------- */
+.baozi-setup {
+    padding: 4px;
+}
+
+.baozi-setup-section {
+    background: white;
+    border-radius: 12px;
+    padding: 12px;
+    margin-bottom: 14px;
+    border: 1.5px solid var(--baozi-cream-dark);
+}
+
+.baozi-setup-section-title {
+    font-weight: 700;
+    color: var(--baozi-brown);
+    margin-bottom: 6px;
+    font-size: 14px;
+}
+
+.baozi-setup-hint {
+    font-size: 12px;
+    color: var(--baozi-brown-soft);
+    margin-bottom: 10px;
+    line-height: 1.5;
+}
+
+
+/* ============================================================
+   📝 全文彈窗（可手動複製）
+   ============================================================ */
+.baozi-modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 100000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    box-sizing: border-box;
+    animation: baozi-fade-in 0.15s ease-out;
+}
+
+@keyframes baozi-fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.baozi-modal {
+    background: var(--baozi-cream);
+    border-radius: 16px;
+    width: 100%;
+    max-width: 500px;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+    font-family: -apple-system, "SF Pro Text", "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif;
+}
+
+.baozi-modal-header {
+    padding: 12px 16px;
+    background: linear-gradient(135deg, var(--baozi-yellow-light) 0%, var(--baozi-peach-light) 100%);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 2px dashed var(--baozi-cream-dark);
+}
+
+.baozi-modal-title {
+    font-weight: 700;
+    color: var(--baozi-brown);
+    font-size: 15px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+    margin-right: 12px;
+}
+
+.baozi-modal-close {
+    cursor: pointer;
+    font-size: 18px;
+    color: var(--baozi-brown-soft);
+    padding: 4px 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.baozi-modal-close:hover {
+    background: rgba(139, 90, 60, 0.1);
+    color: var(--baozi-brown);
+}
+
+.baozi-modal-textarea {
+    flex: 1;
+    margin: 12px;
+    padding: 12px;
+    border: 1.5px solid var(--baozi-cream-dark);
+    border-radius: 10px;
+    background: white;
+    color: var(--baozi-brown);
+    font-family: inherit;
+    font-size: 13px;
+    line-height: 1.6;
+    resize: none;
+    outline: none;
+    min-height: 200px;
+    /* 允許手動選取和複製 */
+    user-select: text;
+    -webkit-user-select: text;
+}
+
+.baozi-modal-footer {
+    padding: 10px 16px;
+    border-top: 1px dashed var(--baozi-cream-dark);
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+}
+
+
+/* ============================================================
+   📥 訊息選擇器
+   ============================================================ */
+.baozi-msg-picker-hint {
+    font-size: 12px;
+    color: var(--baozi-brown-soft);
+    margin-bottom: 6px;
+}
+
+.baozi-msg-picker {
+    background: white;
+    border: 1.5px solid var(--baozi-cream-dark);
+    border-radius: 10px;
+    padding: 6px;
+    margin-bottom: 8px;
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.baozi-msg-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.baozi-msg-item:hover {
+    background: var(--baozi-yellow-light);
+}
+
+.baozi-msg-item input[type="checkbox"] {
+    margin-top: 2px;
+    flex-shrink: 0;
+    accent-color: var(--baozi-peach);
+    cursor: pointer;
+}
+
+.baozi-msg-preview {
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--baozi-brown);
+    flex: 1;
+    min-width: 0;
+}
+
+.baozi-msg-preview b {
+    color: var(--baozi-pink);
+    display: block;
+    margin-bottom: 2px;
+}
+
+.baozi-msg-preview span {
+    color: var(--baozi-brown-soft);
+    word-break: break-word;
+}
+
+
+/* ---------- 設定頁資訊 ---------- */
+.baozi-info {
+    background: white;
+    padding: 12px;
+    border-radius: 10px;
+    font-size: 13px;
+    line-height: 1.8;
+    color: var(--baozi-brown);
+}
+
+
+/* ============================================================
+   🧩 SillyTavern 擴展選單裡的設定區塊
+   ============================================================ */
+#baozi-extension-settings .baozi-ext-settings {
+    padding: 10px 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+#baozi-extension-settings .baozi-ext-status {
+    padding: 8px 12px;
+    border-radius: 10px;
+    font-size: 13px;
+    background: var(--baozi-cream);
+    color: var(--baozi-brown);
+    text-align: center;
+    border: 1.5px solid var(--baozi-cream-dark);
+}
+
+#baozi-extension-settings .baozi-ext-status-ok {
+    background: #E8F5E9;
+    color: #2D6A5A;
+    border-color: #A8D8C9;
+}
+
+#baozi-extension-settings .baozi-ext-status-error {
+    background: #FFE4E1;
+    color: #C44536;
+    border-color: #FFB5AC;
+}
+
+#baozi-extension-settings .baozi-ext-btn {
+    /* menu_button 是 SillyTavern 的原生樣式，這裡加點可愛的風格 */
+    background: linear-gradient(135deg, #FFD66B 0%, #FFB5A7 100%) !important;
+    color: white !important;
+    border: none !important;
+    padding: 10px 16px !important;
+    border-radius: 12px !important;
+    font-weight: 600 !important;
+    font-size: 14px !important;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+#baozi-extension-settings .baozi-ext-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(255, 181, 167, 0.5);
+}
+
+#baozi-extension-settings .baozi-ext-info {
+    font-size: 12px;
+    color: var(--baozi-brown-soft);
+    line-height: 1.6;
+    padding: 0 4px;
+}
+
+
+/* ============================================================
+   📱 手機版適配（螢幕置中、適配安卓和 iPhone）
+   ============================================================ */
+@media (max-width: 700px) {
+    #baozi-panel {
+        /* 手機版：絕對置中，不管拖曳位置 */
+        width: calc(100vw - 20px);
+        max-width: 420px;
+        height: auto;
+        max-height: 80vh;
+        /* 用 transform 置中，不受 iOS safe-area 影響 */
+        top: 50% !important;
+        left: 50% !important;
+        right: auto !important;
+        bottom: auto !important;
+        /* 打開時的 transform 會覆寫這個，所以 closed 時的 transform 寫在這裡 */
+    }
+
+    #baozi-panel:not(.baozi-open) {
+        transform: translate(-50%, -50%) scale(0.8);
+    }
+
+    #baozi-panel.baozi-open {
+        transform: translate(-50%, -50%) scale(1);
+    }
+
+    #baozi-float-btn {
+        /* 手機上浮動按鈕稍微縮小 */
+        width: 50px;
+        height: 50px;
+        font-size: 26px;
+    }
+
+    /* 手機版擴展選單裡的按鈕不要變直立 */
+    #baozi-extension-settings .baozi-ext-btn {
+        writing-mode: horizontal-tb !important;
+        white-space: nowrap;
+        width: 100%;
+        min-height: 44px;
+        line-height: 1.4;
+    }
+
+    /* 手機版標題列不顯示拖曳提示 */
+    .baozi-drag-hint {
+        display: none;
+    }
+}

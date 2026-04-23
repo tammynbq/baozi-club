@@ -454,21 +454,19 @@ function makeDraggable(el, { onClick, saveKey } = {}) {
 
 
 /**
- * 讓主面板可以透過標題列拖曳（桌面版才啟用，手機版每次置中）
+ * 讓主面板可以透過標題列拖曳（所有裝置都支援）
  */
 function makePanelDraggable(panel) {
-    // 手機版不啟用拖曳（每次都自動置中比較方便）
-    if (isMobileScreen()) return;
-
     const header = panel.querySelector('#baozi-panel-header');
     if (!header) return;
 
     let startX, startY, panelStartX, panelStartY;
     let dragging = false;
+    let moved = false;
 
     const onDown = (e) => {
         // 避免點到關閉按鈕時觸發
-        if (e.target.id === 'baozi-close') return;
+        if (e.target.id === 'baozi-close' || e.target.closest('#baozi-close')) return;
 
         const point = e.touches ? e.touches[0] : e;
         startX = point.clientX;
@@ -479,7 +477,11 @@ function makePanelDraggable(panel) {
         panelStartY = rect.top;
 
         dragging = true;
+        moved = false;
         header.style.cursor = 'grabbing';
+
+        // 拖曳時切換成固定位置模式（取消 transform 置中）
+        panel.classList.add('baozi-dragging');
     };
 
     const onMove = (e) => {
@@ -487,6 +489,10 @@ function makePanelDraggable(panel) {
         const point = e.touches ? e.touches[0] : e;
         const dx = point.clientX - startX;
         const dy = point.clientY - startY;
+
+        // 超過 5px 才算拖曳
+        if (Math.abs(dx) > 5 || Math.abs(dy) > 5) moved = true;
+        if (!moved) return;
 
         let newX = panelStartX + dx;
         let newY = panelStartY + dy;
@@ -500,6 +506,9 @@ function makePanelDraggable(panel) {
         panel.style.top = newY + 'px';
         panel.style.right = 'auto';
         panel.style.bottom = 'auto';
+        panel.style.transform = 'none';
+
+        if (e.touches) e.preventDefault();
     };
 
     const onUp = () => {
@@ -507,13 +516,17 @@ function makePanelDraggable(panel) {
         dragging = false;
         header.style.cursor = 'grab';
 
-        // 儲存位置
-        try {
-            localStorage.setItem('baozi_panel_pos', JSON.stringify({
-                left: panel.style.left,
-                top: panel.style.top,
-            }));
-        } catch {}
+        if (moved) {
+            // 拖曳後儲存位置（只在桌面版儲存，手機版每次打開還是置中）
+            if (!isMobileScreen()) {
+                try {
+                    localStorage.setItem('baozi_panel_pos', JSON.stringify({
+                        left: panel.style.left,
+                        top: panel.style.top,
+                    }));
+                } catch {}
+            }
+        }
     };
 
     header.style.cursor = 'grab';
@@ -631,12 +644,14 @@ function openPanel() {
     const overlay = document.getElementById('baozi-overlay');
     if (!panel) return;
 
-    // 手機版：每次打開都重新置中
+    // 手機版：每次打開都重新置中（清除所有內聯位置樣式）
     if (isMobileScreen()) {
+        panel.classList.remove('baozi-dragging');
         panel.style.left = '';
         panel.style.top = '';
         panel.style.right = '';
         panel.style.bottom = '';
+        panel.style.transform = '';
     }
 
     panel.classList.add('baozi-open');

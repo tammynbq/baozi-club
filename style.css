@@ -148,10 +148,15 @@
 
 /* ---------- 內容區 ---------- */
 .baozi-body {
-    flex: 1;
+    flex: 1 1 auto;
     overflow-y: auto;
+    /* 關鍵：min-height:0 讓 flex 元素能正確縮小，
+       不加的話 iPhone 上會溢出容器 */
+    min-height: 0;
     padding: 16px;
     color: var(--baozi-brown);
+    /* iOS 平滑滾動 */
+    -webkit-overflow-scrolling: touch;
 }
 
 .baozi-body::-webkit-scrollbar {
@@ -896,25 +901,39 @@
    ============================================================ */
 @media (max-width: 700px) {
     #baozi-panel {
-        /* 手機版：絕對置中，不管拖曳位置 */
+        /* 手機版：預設絕對置中 */
         width: calc(100vw - 20px);
         max-width: 420px;
         height: auto;
-        max-height: 80vh;
-        /* 用 transform 置中，不受 iOS safe-area 影響 */
+
+        /* iPhone Safari 上 100vh 會把工具列算進去導致超出螢幕，
+           用 90dvh（動態視窗高度）和 svh（小視窗高度）雙保險 */
+        max-height: 85svh;
+        max-height: 85dvh;
+
         top: 50% !important;
         left: 50% !important;
         right: auto !important;
         bottom: auto !important;
-        /* 打開時的 transform 會覆寫這個，所以 closed 時的 transform 寫在這裡 */
     }
 
-    #baozi-panel:not(.baozi-open) {
+    /* 置中模式（預設） */
+    #baozi-panel:not(.baozi-open):not(.baozi-dragging) {
         transform: translate(-50%, -50%) scale(0.8);
     }
 
-    #baozi-panel.baozi-open {
+    #baozi-panel.baozi-open:not(.baozi-dragging) {
         transform: translate(-50%, -50%) scale(1);
+    }
+
+    /* 拖曳過後的面板：自由定位模式 */
+    #baozi-panel.baozi-dragging {
+        top: auto !important;
+        left: auto !important;
+    }
+
+    #baozi-panel.baozi-dragging.baozi-open {
+        transform: none !important;
     }
 
     #baozi-float-btn {
@@ -933,8 +952,10 @@
         line-height: 1.4;
     }
 
-    /* 手機版標題列不顯示拖曳提示 */
+    /* 手機版標題列顯示小小的拖曳提示 */
     .baozi-drag-hint {
-        display: none;
+        display: inline !important;
+        font-size: 11px;
+        opacity: 0.5;
     }
 }

@@ -895,55 +895,49 @@
     padding: 0 4px;
 }
 
+#baozi-extension-settings .baozi-ext-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 4px;
+    font-size: 13px;
+    color: var(--baozi-brown);
+    cursor: pointer;
+}
+
+#baozi-extension-settings .baozi-ext-toggle input[type="checkbox"] {
+    accent-color: var(--baozi-peach);
+    cursor: pointer;
+    width: 16px;
+    height: 16px;
+}
+
 
 /* ============================================================
    📱 手機版適配（螢幕置中、適配安卓和 iPhone）
    ============================================================ */
 @media (max-width: 700px) {
     #baozi-panel {
-        /* 手機版：預設絕對置中 */
         width: calc(100vw - 20px);
         max-width: 420px;
         height: auto;
-
-        /* iPhone Safari 上 100vh 會把工具列算進去導致超出螢幕，
-           用 90dvh（動態視窗高度）和 svh（小視窗高度）雙保險 */
+        /* iPhone Safari：用 svh/dvh 避免底部工具列搶空間 */
         max-height: 85svh;
         max-height: 85dvh;
-
-        top: 50% !important;
-        left: 50% !important;
-        right: auto !important;
-        bottom: auto !important;
+        /* 不用 CSS transform 置中，改用 JS 精確計算（openPanel 裡做） */
     }
 
-    /* 置中模式（預設） */
-    #baozi-panel:not(.baozi-open):not(.baozi-dragging) {
-        transform: translate(-50%, -50%) scale(0.8);
-    }
-
-    #baozi-panel.baozi-open:not(.baozi-dragging) {
-        transform: translate(-50%, -50%) scale(1);
-    }
-
-    /* 拖曳過後的面板：自由定位模式 */
-    #baozi-panel.baozi-dragging {
-        top: auto !important;
-        left: auto !important;
-    }
-
-    #baozi-panel.baozi-dragging.baozi-open {
-        transform: none !important;
+    #baozi-panel.baozi-open {
+        /* 不加 transform，由 JS 控制位置 */
+        transform: none;
     }
 
     #baozi-float-btn {
-        /* 手機上浮動按鈕稍微縮小 */
         width: 50px;
         height: 50px;
         font-size: 26px;
     }
 
-    /* 手機版擴展選單裡的按鈕不要變直立 */
     #baozi-extension-settings .baozi-ext-btn {
         writing-mode: horizontal-tb !important;
         white-space: nowrap;
@@ -952,7 +946,6 @@
         line-height: 1.4;
     }
 
-    /* 手機版標題列顯示小小的拖曳提示 */
     .baozi-drag-hint {
         display: inline !important;
         font-size: 11px;

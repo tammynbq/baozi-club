@@ -626,47 +626,95 @@ return window.innerWidth <= 700;
 - 把設定區塊插入 SillyTavern 的擴展設定面板
 - 這樣使用者可以從擴展選單找到包子同好會，特別對手機使用者有幫助
   */
-  function insertExtensionSettings() {
-  // 嘗試多個可能的容器（不同版本 ST 結構略有差異）
-  const container = document.getElementById(‘extensions_settings2’)
-  || document.getElementById(‘extensions_settings’)
-  || document.querySelector(’#translation_container’)?.parentElement;
-  
-  if (!container) {
-  // 找不到就 1 秒後重試（ST 有時候晚一點才載好 DOM）
-  console.warn(’[包子同好會] 找不到擴展設定區，稍後重試’);
-  setTimeout(insertExtensionSettings, 1000);
-  return;
-  }
-  
-  // 避免重複插入
-  if (document.getElementById(‘baozi-extension-settings’)) return;
-  
-  const settingsBlock = document.createElement(‘div’);
-  settingsBlock.id = ‘baozi-extension-settings’;
-  
-  // 讀取浮動按鈕的顯示設定
-  const floatHidden = localStorage.getItem(‘baozi_float_hidden’) === ‘yes’;
-  // 立刻套用
-  const existingFloat = document.getElementById(‘baozi-float-btn’);
-  if (existingFloat && floatHidden) existingFloat.style.display = ‘none’;
-  
-  settingsBlock.innerHTML = `<div class="inline-drawer"> <div class="inline-drawer-toggle inline-drawer-header"> <b>🥟 包子同好會</b> <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div> </div> <div class="inline-drawer-content"> <div class="baozi-ext-settings"> <div id="baozi-ext-status" class="baozi-ext-status">⏳ 連線中...</div> <button id="baozi-open-main" class="menu_button baozi-ext-btn"> 🥟 打開包子同好會 </button> <label class="baozi-ext-toggle"> <input type="checkbox" id="baozi-toggle-float" ${floatHidden ? 'checked' : ''}> <span>隱藏右下角浮動包子按鈕</span> </label> <div class="baozi-ext-info"> <small> 💡 隱藏浮動按鈕後，可以用上面的按鈕打開面板 </small> </div> </div> </div> </div>`;
-  container.appendChild(settingsBlock);
-  
-  // 綁定按鈕
-  document.getElementById(‘baozi-open-main’).addEventListener(‘click’, openPanel);
-  
-  // 綁定浮動按鈕顯示/隱藏開關
-  document.getElementById(‘baozi-toggle-float’).addEventListener(‘change’, (e) => {
-  const hide = e.target.checked;
-  const btn = document.getElementById(‘baozi-float-btn’);
-  if (btn) btn.style.display = hide ? ‘none’ : ‘’;
-  localStorage.setItem(‘baozi_float_hidden’, hide ? ‘yes’ : ‘no’);
-  });
-  
-  console.log(’[包子同好會] 擴展設定區已插入’);
-  }
+  let insertRetryCount = 0;
+  const MAX_INSERT_RETRY = 30;  // 最多重試 30 次（= 30 秒）
+
+function insertExtensionSettings() {
+try {
+// 嘗試多個可能的容器（不同版本 ST 結構略有差異）
+const container = document.getElementById(‘extensions_settings2’)
+|| document.getElementById(‘extensions_settings’)
+|| document.querySelector(’#translation_container’)?.parentElement
+|| document.querySelector(’.extensions_block’)
+|| document.querySelector(’[id*=“extensions_settings”]’);
+
+```
+    if (!container) {
+        insertRetryCount++;
+        if (insertRetryCount < MAX_INSERT_RETRY) {
+            console.warn(`[包子同好會] 找不到擴展設定區，稍後重試 (${insertRetryCount}/${MAX_INSERT_RETRY})`);
+            setTimeout(insertExtensionSettings, 1000);
+        } else {
+            console.error('[包子同好會] 放棄重試。SillyTavern 的 DOM 結構可能不同');
+        }
+        return;
+    }
+
+    // 避免重複插入
+    if (document.getElementById('baozi-extension-settings')) {
+        console.log('[包子同好會] 擴展設定區已存在，不重複插入');
+        return;
+    }
+
+    const settingsBlock = document.createElement('div');
+    settingsBlock.id = 'baozi-extension-settings';
+
+    // 讀取浮動按鈕的顯示設定
+    const floatHidden = localStorage.getItem('baozi_float_hidden') === 'yes';
+    // 立刻套用
+    const existingFloat = document.getElementById('baozi-float-btn');
+    if (existingFloat && floatHidden) existingFloat.style.display = 'none';
+
+    settingsBlock.innerHTML = `
+        <div class="inline-drawer">
+            <div class="inline-drawer-toggle inline-drawer-header">
+                <b>🥟 包子同好會</b>
+                <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+            </div>
+            <div class="inline-drawer-content">
+                <div class="baozi-ext-settings">
+                    <div id="baozi-ext-status" class="baozi-ext-status">⏳ 連線中...</div>
+                    <button id="baozi-open-main" class="menu_button baozi-ext-btn">
+                        🥟 打開包子同好會
+                    </button>
+                    <label class="baozi-ext-toggle">
+                        <input type="checkbox" id="baozi-toggle-float" ${floatHidden ? 'checked' : ''}>
+                        <span>隱藏右下角浮動包子按鈕</span>
+                    </label>
+                    <div class="baozi-ext-info">
+                        <small>
+                            💡 隱藏浮動按鈕後，可以用上面的按鈕打開面板
+                        </small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    container.appendChild(settingsBlock);
+
+    // 綁定按鈕（用 optional chaining 避免找不到元素時整個崩掉）
+    document.getElementById('baozi-open-main')?.addEventListener('click', openPanel);
+
+    // 綁定浮動按鈕顯示/隱藏開關
+    document.getElementById('baozi-toggle-float')?.addEventListener('change', (e) => {
+        const hide = e.target.checked;
+        const btn = document.getElementById('baozi-float-btn');
+        if (btn) btn.style.display = hide ? 'none' : '';
+        localStorage.setItem('baozi_float_hidden', hide ? 'yes' : 'no');
+    });
+
+    console.log('[包子同好會] 擴展設定區已成功插入 ✅');
+} catch (err) {
+    console.error('[包子同好會] 插入擴展設定區時發生錯誤：', err);
+    // 即使出錯也重試，可能是暫時性問題
+    insertRetryCount++;
+    if (insertRetryCount < MAX_INSERT_RETRY) {
+        setTimeout(insertExtensionSettings, 1000);
+    }
+}
+```
+
+}
 
 /** 更新擴展區塊的狀態顯示 */
 function updateExtStatus(text, type = ‘info’) {

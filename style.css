@@ -68,6 +68,137 @@
     user-select: none;
 }
 
+
+/* ============================================================
+   ❤️ 點讚按鈕
+   ============================================================ */
+.baozi-btn-like {
+    display: inline-flex !important;
+    align-items: center;
+    gap: 4px;
+    transition: transform 0.15s, background 0.2s;
+}
+
+.baozi-btn-like:hover {
+    transform: scale(1.05);
+}
+
+.baozi-btn-like:active {
+    transform: scale(0.95);
+}
+
+.baozi-btn-like.liked {
+    background: linear-gradient(135deg, #FFE4E1 0%, #FFCCCC 100%) !important;
+    border-color: var(--baozi-peach) !important;
+    color: #C44536 !important;
+}
+
+.baozi-like-count {
+    font-size: 11px;
+    font-weight: 600;
+    min-width: 8px;
+}
+
+
+/* ============================================================
+   🔔 通知紅點
+   ============================================================ */
+.baozi-notif-badge {
+    /* 浮動按鈕上的紅點 */
+    position: absolute;
+    top: -2px;
+    right: -2px;
+    background: #FF4757;
+    color: white;
+    border-radius: 50%;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 4px;
+    font-size: 11px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 4px rgba(255, 71, 87, 0.4);
+    border: 2px solid white;
+    box-sizing: content-box;
+    pointer-events: none;
+}
+
+.baozi-notif-badge-inline {
+    /* 擴展選單標題上的紅點 */
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: #FF4757;
+    color: white;
+    border-radius: 10px;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 6px;
+    font-size: 11px;
+    font-weight: 700;
+    margin-left: 8px;
+    vertical-align: middle;
+}
+
+
+/* ============================================================
+   📦 簡約卡片（沒有預覽內容）
+   ============================================================ */
+.baozi-card-compact {
+    /* 比一般卡片更緊湊 */
+    padding: 10px 12px;
+}
+
+.baozi-card-compact .baozi-card-title {
+    margin-bottom: 4px;
+}
+
+.baozi-card-compact .baozi-card-preface {
+    margin-bottom: 6px;
+}
+
+
+/* ============================================================
+   📝 對話分享彈窗（含打碼）
+   ============================================================ */
+.baozi-modal-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 14px 16px;
+    background: white;
+    margin: 12px;
+    border-radius: 10px;
+    -webkit-overflow-scrolling: touch;
+}
+
+.baozi-modal-preface {
+    background: var(--baozi-yellow-light);
+    color: var(--baozi-brown);
+    padding: 8px 12px;
+    border-radius: 8px;
+    margin-bottom: 12px;
+    font-size: 13px;
+    font-style: italic;
+    line-height: 1.5;
+}
+
+.baozi-modal-text {
+    font-size: 13px;
+    line-height: 1.7;
+    color: var(--baozi-brown);
+    word-break: break-word;
+    user-select: text;
+    -webkit-user-select: text;
+}
+
+.baozi-mask-tip {
+    color: var(--baozi-brown-soft);
+    font-size: 11px;
+    margin-right: auto;
+}
+
 /* ---------- 背景遮罩（點擊可關閉面板） ---------- */
 #baozi-overlay {
     position: fixed;
@@ -386,8 +517,19 @@
     align-items: center;
     gap: 12px;
     margin-bottom: 14px;
-    padding-bottom: 10px;
+    padding: 12px 0 10px 0;
     border-bottom: 1.5px dashed var(--baozi-cream-dark);
+    /* 黏在面板頂部，不會被內容捲走 */
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    /* 半透明背景，讓底下捲動的內容稍微透出來 */
+    background: var(--baozi-cream);
+    /* 補回 body 的 padding 以避免被外框切到 */
+    margin-left: -16px;
+    margin-right: -16px;
+    padding-left: 16px;
+    padding-right: 16px;
 }
 
 .baozi-screen-header h3 {

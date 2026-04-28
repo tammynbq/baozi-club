@@ -191,8 +191,201 @@ async function shareCommand(id) {
 
 
 // ============================================================
-// 🏠 共享空間：看大家分享的指令
+// ❤️ 點讚功能（指令和對話通用）
 // ============================================================
+
+/**
+ * 切換點讚狀態
+ * @param {string} targetType - 'command' 或 'chat'
+ * @param {string} targetId - 對應文件 id
+ * @returns {Promise<boolean>} 切換後是否為已讚狀態
+ */
+async function toggleLike(targetType, targetId) {
+    const { collection, query, where, getDocs, addDoc, deleteDoc, doc, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+
+    // 先看自己有沒有按過
+    const q = query(
+        collection(state.db, 'likes'),
+        where('targetType', '==', targetType),
+        where('targetId', '==', targetId),
+        where('userId', '==', state.user.uid)
+    );
+    const snapshot = await getDocs(q);
+
+    if (snapshot.empty) {
+        // 還沒讚 → 按讚
+        await addDoc(collection(state.db, 'likes'), {
+            targetType,
+            targetId,
+            userId: state.user.uid,
+            userNickname: state.nickname,
+            createdAt: serverTimestamp(),
+        });
+        return true;
+    } else {
+        // 已經讚過 → 取消
+        for (const d of snapshot.docs) {
+            await deleteDoc(doc(state.db, 'likes', d.id));
+        }
+        return false;
+    }
+}
+
+/**
+ * 取得多個目標的讚數和當前使用者是否讚過
+ * @returns {Promise<Object>} { [targetId]: { count, likedByMe } }
+ */
+async function getLikesInfo(targetType, targetIds) {
+    if (!targetIds || targetIds.length === 0) return {};
+
+    const { collection, query, where, getDocs } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+
+    const q = query(
+        collection(state.db, 'likes'),
+        where('targetType', '==', targetType)
+    );
+    const snapshot = await getDocs(q);
+
+    const result = {};
+    targetIds.forEach(id => result[id] = { count: 0, likedByMe: false });
+
+    snapshot.docs.forEach(d => {
+        const data = d.data();
+        if (result[data.targetId]) {
+            result[data.targetId].count++;
+            if (data.userId === state.user.uid) {
+                result[data.targetId].likedByMe = true;
+            }
+        }
+    });
+
+    return result;
+}
+
+
+// ============================================================
+// 🔔 通知系統（檢查有沒有新的點讚和留言）
+// ============================================================
+
+/**
+ * 取得未讀通知數量
+ * 比對「上次查看時間」之後的新留言/點讚
+ */
+async function getUnreadCount() {
+    if (!state.user || !state.db) return 0;
+
+    const { collection, query, where, getDocs } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+
+    const lastSeenStr = localStorage.getItem('baozi_last_seen_notif');
+    const lastSeenTime = lastSeenStr ? parseInt(lastSeenStr) : 0;
+
+    let count = 0;
+
+    try {
+        // 先取得我自己分享過的東西的 id 列表
+        const myCmdQ = query(
+            collection(state.db, 'commands'),
+            where('ownerId', '==', state.user.uid)
+        );
+        const myChatQ = query(
+            collection(state.db, 'chats'),
+            where('ownerId', '==', state.user.uid)
+        );
+
+        const [cmdSnap, chatSnap] = await Promise.all([getDocs(myCmdQ), getDocs(myChatQ)]);
+        const mySharedCmdIds = cmdSnap.docs.filter(d => d.data().shared).map(d => d.id);
+        const myChatIds = chatSnap.docs.map(d => d.id);
+        const allMyIds = [...mySharedCmdIds, ...myChatIds];
+
+        if (allMyIds.length === 0) return 0;
+
+        // 取得別人在我東西上的留言（比對時間）
+        const commentsSnap = await getDocs(collection(state.db, 'comments'));
+        commentsSnap.docs.forEach(d => {
+            const data = d.data();
+            if (data.authorId === state.user.uid) return;
+            if (!allMyIds.includes(data.targetId)) return;
+            const t = (data.createdAt?.seconds || 0) * 1000;
+            if (t > lastSeenTime) count++;
+        });
+
+        // 取得別人對我東西的點讚
+        const likesSnap = await getDocs(collection(state.db, 'likes'));
+        likesSnap.docs.forEach(d => {
+            const data = d.data();
+            if (data.userId === state.user.uid) return;
+            if (!allMyIds.includes(data.targetId)) return;
+            const t = (data.createdAt?.seconds || 0) * 1000;
+            if (t > lastSeenTime) count++;
+        });
+    } catch (err) {
+        console.warn('[包子同好會] 通知檢查失敗', err);
+    }
+
+    return count;
+}
+
+/**
+ * 把所有通知標記為已讀
+ */
+function markNotificationsRead() {
+    localStorage.setItem('baozi_last_seen_notif', Date.now().toString());
+    updateNotifBadge(0);
+}
+
+/**
+ * 更新浮動按鈕和擴展選單上的紅點
+ */
+function updateNotifBadge(count) {
+    // 浮動按鈕的紅點
+    const floatBtn = document.getElementById('baozi-float-btn');
+    if (floatBtn) {
+        let badge = floatBtn.querySelector('.baozi-notif-badge');
+        if (count > 0) {
+            if (!badge) {
+                badge = document.createElement('span');
+                badge.className = 'baozi-notif-badge';
+                floatBtn.appendChild(badge);
+            }
+            badge.textContent = count > 9 ? '9+' : count;
+        } else if (badge) {
+            badge.remove();
+        }
+    }
+
+    // 擴展選單的紅點（在標題後面）
+    const extHeader = document.querySelector('#baozi-extension-settings .inline-drawer-header b');
+    if (extHeader) {
+        let badge = extHeader.querySelector('.baozi-notif-badge-inline');
+        if (count > 0) {
+            if (!badge) {
+                badge = document.createElement('span');
+                badge.className = 'baozi-notif-badge-inline';
+                extHeader.appendChild(badge);
+            }
+            badge.textContent = count > 9 ? '9+' : count;
+        } else if (badge) {
+            badge.remove();
+        }
+    }
+}
+
+/**
+ * 開始定期檢查通知（每 30 秒）
+ */
+function startNotificationPolling() {
+    const check = async () => {
+        if (state.isReady) {
+            const count = await getUnreadCount();
+            updateNotifBadge(count);
+        }
+    };
+    check();  // 立刻檢查一次
+    setInterval(check, 30 * 1000);  // 每 30 秒檢查
+}
+
+
+
 
 async function getSharedCommands() {
     const { collection, query, where, getDocs } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
@@ -706,6 +899,11 @@ function openPanel() {
         drawer.classList.add('closedDrawer');
     }
 
+    // 標記通知為已讀
+    if (state.isReady) {
+        markNotificationsRead();
+    }
+
     renderMainContent();
 }
 
@@ -1102,22 +1300,31 @@ async function renderSharedSpaceScreen(container) {
             return;
         }
 
-        list.innerHTML = commands.map(cmd => `
-            <div class="baozi-card">
-                <div class="baozi-card-owner">${escapeHtml(cmd.ownerNickname || '匿名')} 分享了</div>
-                <div class="baozi-card-title">${escapeHtml(cmd.title)}</div>
-                <div class="baozi-card-content">${escapeHtml(cmd.content).substring(0, 150)}${cmd.content.length > 150 ? '...' : ''}</div>
-                <div class="baozi-card-actions">
-                    <button class="baozi-btn-small" data-action="view" data-id="${cmd.id}">👀 看全文</button>
-                    <button class="baozi-btn-small" data-action="copy" data-id="${cmd.id}">📋 複製</button>
-                    ${cmd.ownerId !== state.user.uid
-                        ? `<button class="baozi-btn-small" data-action="favorite" data-id="${cmd.id}">⭐ 收藏</button>`
-                        : '<span class="baozi-tag-mine">我分享的</span>'}
-                    <button class="baozi-btn-small" data-action="comment" data-id="${cmd.id}">💭 吐槽</button>
+        // 取得每個指令的點讚資訊
+        const likesInfo = await getLikesInfo('command', commands.map(c => c.id));
+
+        list.innerHTML = commands.map(cmd => {
+            const likes = likesInfo[cmd.id] || { count: 0, likedByMe: false };
+            const isMine = cmd.ownerId === state.user.uid;
+            return `
+                <div class="baozi-card baozi-card-compact">
+                    <div class="baozi-card-owner">${escapeHtml(cmd.ownerNickname || '匿名')} 分享了${isMine ? ' <span class="baozi-tag-mine">我</span>' : ''}</div>
+                    <div class="baozi-card-title">${escapeHtml(cmd.title)}</div>
+                    <div class="baozi-card-actions">
+                        <button class="baozi-btn-small baozi-btn-like ${likes.likedByMe ? 'liked' : ''}" data-action="like" data-id="${cmd.id}">
+                            ${likes.likedByMe ? '❤️' : '🤍'} <span class="baozi-like-count">${likes.count || ''}</span>
+                        </button>
+                        <button class="baozi-btn-small" data-action="view" data-id="${cmd.id}">👀 看全文</button>
+                        <button class="baozi-btn-small" data-action="copy" data-id="${cmd.id}">📋 複製</button>
+                        ${!isMine
+                            ? `<button class="baozi-btn-small" data-action="favorite" data-id="${cmd.id}">⭐ 收藏</button>`
+                            : ''}
+                        <button class="baozi-btn-small" data-action="comment" data-id="${cmd.id}">💭 吐槽</button>
+                    </div>
+                    <div class="baozi-comments" id="baozi-comments-${cmd.id}" style="display:none;"></div>
                 </div>
-                <div class="baozi-comments" id="baozi-comments-${cmd.id}" style="display:none;"></div>
-            </div>
-        `).join('');
+            `;
+        }).join('');
 
         list.querySelectorAll('[data-action]').forEach(btn => {
             btn.addEventListener('click', async () => {
@@ -1137,6 +1344,23 @@ async function renderSharedSpaceScreen(container) {
                     setTimeout(() => btn.textContent = '📋 複製', 1500);
                 } else if (action === 'comment') {
                     toggleCommentPanel('command', id);
+                } else if (action === 'like') {
+                    btn.disabled = true;
+                    try {
+                        const liked = await toggleLike('command', id);
+                        const current = likesInfo[id] || { count: 0, likedByMe: false };
+                        likesInfo[id] = {
+                            count: current.count + (liked ? 1 : -1),
+                            likedByMe: liked,
+                        };
+                        const newInfo = likesInfo[id];
+                        btn.classList.toggle('liked', newInfo.likedByMe);
+                        btn.innerHTML = `${newInfo.likedByMe ? '❤️' : '🤍'} <span class="baozi-like-count">${newInfo.count || ''}</span>`;
+                    } catch (err) {
+                        console.error('[包子同好會] 點讚失敗', err);
+                    } finally {
+                        btn.disabled = false;
+                    }
                 }
             });
         });
@@ -1172,32 +1396,32 @@ async function renderSharedChatsScreen(container) {
             return;
         }
 
+        // 取得每個對話的點讚資訊
+        const likesInfo = await getLikesInfo('chat', chats.map(c => c.id));
+
         list.innerHTML = chats.map(chat => {
             const isMine = chat.ownerId === state.user.uid;
+            const likes = likesInfo[chat.id] || { count: 0, likedByMe: false };
             return `
-                <div class="baozi-card" data-chat-id="${chat.id}">
-                    <div class="baozi-card-owner">${escapeHtml(chat.ownerNickname || '匿名')}${isMine ? ' <span class="baozi-tag-mine">我分享的</span>' : ''}</div>
+                <div class="baozi-card baozi-card-compact" data-chat-id="${chat.id}">
+                    <div class="baozi-card-owner">${escapeHtml(chat.ownerNickname || '匿名')}${isMine ? ' <span class="baozi-tag-mine">我</span>' : ''}</div>
                     <div class="baozi-card-title">${escapeHtml(chat.title || '(無標題)')}</div>
-                    <div class="baozi-card-preface">${escapeHtml(chat.preface || '')}</div>
-                    <div class="baozi-card-content">${renderMaskedText(chat.content, chat.maskedRanges || [])}</div>
+                    ${chat.preface ? `<div class="baozi-card-preface">${escapeHtml(chat.preface)}</div>` : ''}
                     <div class="baozi-card-actions">
+                        <button class="baozi-btn-small baozi-btn-like ${likes.likedByMe ? 'liked' : ''}" data-action="like" data-id="${chat.id}">
+                            ${likes.likedByMe ? '❤️' : '🤍'} <span class="baozi-like-count">${likes.count || ''}</span>
+                        </button>
+                        <button class="baozi-btn-small" data-action="view" data-id="${chat.id}">👀 看全文</button>
                         <button class="baozi-btn-small" data-action="comment" data-id="${chat.id}">💭 吐槽</button>
                         ${isMine ? `
                             <button class="baozi-btn-small" data-action="edit" data-id="${chat.id}">✏️ 修改</button>
-                            <button class="baozi-btn-small baozi-btn-danger" data-action="delete" data-id="${chat.id}">🗑️ 刪除</button>
+                            <button class="baozi-btn-small baozi-btn-danger" data-action="delete" data-id="${chat.id}">🗑️</button>
                         ` : ''}
                     </div>
                     <div class="baozi-comments" id="baozi-comments-${chat.id}" style="display:none;"></div>
                 </div>
             `;
         }).join('');
-
-        // 讓打碼可以點擊顯示
-        list.querySelectorAll('.baozi-masked').forEach(el => {
-            el.addEventListener('click', () => {
-                el.classList.toggle('baozi-masked-revealed');
-            });
-        });
 
         // 綁定按鈕事件
         list.querySelectorAll('[data-action]').forEach(btn => {
@@ -1208,8 +1432,10 @@ async function renderSharedChatsScreen(container) {
 
                 if (action === 'comment') {
                     toggleCommentPanel('chat', id);
+                } else if (action === 'view') {
+                    showFullChatModal(chat);
                 } else if (action === 'edit') {
-                    renderShareChatScreen(container, chat);  // 帶入現有資料編輯
+                    renderShareChatScreen(container, chat);
                 } else if (action === 'delete') {
                     if (confirm('確定要刪除這個分享嗎？（其他人也會看不到）')) {
                         try {
@@ -1218,6 +1444,23 @@ async function renderSharedChatsScreen(container) {
                         } catch (err) {
                             alert('刪除失敗：' + err.message);
                         }
+                    }
+                } else if (action === 'like') {
+                    btn.disabled = true;
+                    try {
+                        const liked = await toggleLike('chat', id);
+                        const current = likesInfo[id] || { count: 0, likedByMe: false };
+                        likesInfo[id] = {
+                            count: current.count + (liked ? 1 : -1),
+                            likedByMe: liked,
+                        };
+                        const newInfo = likesInfo[id];
+                        btn.classList.toggle('liked', newInfo.likedByMe);
+                        btn.innerHTML = `${newInfo.likedByMe ? '❤️' : '🤍'} <span class="baozi-like-count">${newInfo.count || ''}</span>`;
+                    } catch (err) {
+                        console.error('[包子同好會] 點讚失敗', err);
+                    } finally {
+                        btn.disabled = false;
                     }
                 }
             });
@@ -1685,6 +1928,51 @@ function showFullTextModal(title, content) {
 }
 
 
+/**
+ * 顯示對話分享全文（包含打碼，可點擊揭露）
+ */
+function showFullChatModal(chat) {
+    const existing = document.getElementById('baozi-chat-modal');
+    if (existing) existing.remove();
+
+    const modal = document.createElement('div');
+    modal.id = 'baozi-chat-modal';
+    modal.className = 'baozi-modal-overlay';
+    modal.innerHTML = `
+        <div class="baozi-modal">
+            <div class="baozi-modal-header">
+                <span class="baozi-modal-title">${escapeHtml(chat.title || '查看全文')}</span>
+                <span class="baozi-modal-close">✕</span>
+            </div>
+            <div class="baozi-modal-content">
+                ${chat.preface ? `<div class="baozi-modal-preface">${escapeHtml(chat.preface)}</div>` : ''}
+                <div class="baozi-modal-text">${renderMaskedText(chat.content, chat.maskedRanges || [])}</div>
+            </div>
+            <div class="baozi-modal-footer">
+                <small class="baozi-mask-tip">💡 灰色塊是打碼的，點一下可以看到原文</small>
+                <button class="baozi-btn-small baozi-modal-dismiss">關閉</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+
+    const close = () => modal.remove();
+
+    modal.querySelector('.baozi-modal-close').addEventListener('click', close);
+    modal.querySelector('.baozi-modal-dismiss').addEventListener('click', close);
+    modal.addEventListener('click', e => {
+        if (e.target === modal) close();
+    });
+
+    // 讓打碼可以點擊顯示
+    modal.querySelectorAll('.baozi-masked').forEach(el => {
+        el.addEventListener('click', () => {
+            el.classList.toggle('baozi-masked-revealed');
+        });
+    });
+}
+
+
 // ============================================================
 // 🚀 啟動擴展
 // ============================================================
@@ -1734,4 +2022,7 @@ function showFullTextModal(title, content) {
     }
 
     console.log('[包子同好會] 啟動完成 🥟');
+
+    // 開始定期檢查通知
+    startNotificationPolling();
 })();

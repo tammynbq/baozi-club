@@ -1,0 +1,84 @@
+rules_version = '2';
+
+// ============================================================
+// 🔐 包子同好會 - Firestore 安全規則
+// ============================================================
+// 這些規則保護你的資料庫，讓只有「成功登入」的人才能讀寫。
+// ⚠️ 注意：因為我們用匿名登入 + 應用層暗號驗證，
+// 這些規則的主要作用是限制未登入的人隨便存取。
+// 真正的「圈內人」驗證是在擴展程式裡做的。
+// ============================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 只有已登入的人（即使匿名）才能讀寫
+    function isAuth() {
+      return request.auth != null;
+    }
+
+    // 確認正在操作的資料是「當前使用者自己的」
+    function isOwner(ownerId) {
+      return request.auth.uid == ownerId;
+    }
+
+    // ---------- 成員列表 ----------
+    // 每個人只能讀寫「自己」的成員記錄
+    match /members/{memberId} {
+      allow read: if isAuth();
+      allow create, update: if isAuth() && memberId == request.auth.uid;
+      allow delete: if false; // 不允許刪除成員記錄
+    }
+
+    // ---------- 指令集 ----------
+    // 所有登入者都能讀（因為我們需要看共享空間）
+    // 但只能建立「自己的」指令、只能編輯/刪除自己的
+    match /commands/{commandId} {
+      allow read: if isAuth();
+      allow create: if isAuth()
+                      && request.resource.data.ownerId == request.auth.uid;
+      allow update: if isAuth()
+                      && resource.data.ownerId == request.auth.uid;
+      allow delete: if isAuth()
+                      && resource.data.ownerId == request.auth.uid;
+    }
+
+    // ---------- 分享的對話 ----------
+    // 規則同上：登入者可讀、只能管理自己分享的
+    match /chats/{chatId} {
+      allow read: if isAuth();
+      allow create: if isAuth()
+                      && request.resource.data.ownerId == request.auth.uid;
+      allow update: if isAuth()
+                      && resource.data.ownerId == request.auth.uid;
+      allow delete: if isAuth()
+                      && resource.data.ownerId == request.auth.uid;
+    }
+
+    // ---------- 吐槽留言 ----------
+    // 登入者可以讀、建立（以自己身份）、刪除自己的留言
+    match /comments/{commentId} {
+      allow read: if isAuth();
+      allow create: if isAuth()
+                      && request.resource.data.authorId == request.auth.uid;
+      allow update, delete: if isAuth()
+                      && resource.data.authorId == request.auth.uid;
+    }
+
+    // ---------- 點讚 ----------
+    // 登入者可以讀（要顯示讚數）、建立和刪除「自己的」點讚
+    match /likes/{likeId} {
+      allow read: if isAuth();
+      allow create: if isAuth()
+                      && request.resource.data.userId == request.auth.uid;
+      allow delete: if isAuth()
+                      && resource.data.userId == request.auth.uid;
+      allow update: if false;  // 不需要修改點讚
+    }
+
+    // 其他集合一律禁止
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

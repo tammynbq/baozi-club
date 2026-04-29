@@ -142,6 +142,41 @@
     vertical-align: middle;
 }
 
+/* ---------- 首頁選單按鈕的紅點 ---------- */
+.baozi-menu-dot {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 10px;
+    height: 10px;
+    background: #FF4757;
+    border-radius: 50%;
+    box-shadow: 0 1px 3px rgba(255, 71, 87, 0.5);
+    animation: baozi-pulse 1.6s infinite ease-in-out;
+}
+
+.baozi-menu-btn {
+    position: relative;  /* 讓紅點能用 absolute 定位 */
+}
+
+@keyframes baozi-pulse {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.2); opacity: 0.7; }
+}
+
+/* ---------- 卡片上的紅點 ---------- */
+.baozi-card-unread {
+    border-color: var(--baozi-peach) !important;
+    box-shadow: 0 2px 12px rgba(244, 165, 181, 0.3) !important;
+    background: linear-gradient(180deg, #FFF8EC 0%, white 30%) !important;
+}
+
+.baozi-card-dot {
+    margin-left: 6px;
+    font-size: 10px;
+    animation: baozi-pulse 1.6s infinite ease-in-out;
+}
+
 
 /* ============================================================
    📦 簡約卡片（沒有預覽內容）
@@ -826,6 +861,8 @@
     padding: 20px;
     box-sizing: border-box;
     animation: baozi-fade-in 0.15s ease-out;
+    /* 觸控裝置上避免 overlay 滾動把背景帶走 */
+    overscroll-behavior: contain;
 }
 
 @keyframes baozi-fade-in {
@@ -838,12 +875,16 @@
     border-radius: 16px;
     width: 100%;
     max-width: 500px;
-    max-height: 80vh;
+    /* 用 svh 避免 iPhone 工具列搶空間 */
+    max-height: 80svh;
+    max-height: 80dvh;
     display: flex;
     flex-direction: column;
     overflow: hidden;
     box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
     font-family: -apple-system, "SF Pro Text", "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif;
+    /* 標題列當作拖曳把手 */
+    position: relative;
 }
 
 .baozi-modal-header {
@@ -853,6 +894,18 @@
     align-items: center;
     justify-content: space-between;
     border-bottom: 2px dashed var(--baozi-cream-dark);
+    cursor: grab;
+    user-select: none;
+}
+
+.baozi-modal-header:active {
+    cursor: grabbing;
+}
+
+/* 拖曳過後的彈窗：脫離 flex 容器，用絕對定位 */
+.baozi-modal.baozi-modal-dragged {
+    position: absolute;
+    margin: 0;
 }
 
 .baozi-modal-title {

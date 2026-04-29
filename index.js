@@ -264,25 +264,36 @@ async function getLikesInfo(targetType, targetIds) {
 
 
 // ============================================================
-// 🔔 通知系統（檢查有沒有新的點讚和留言）
+// 🔔 通知系統（檢查有沒有新的點讚和留言，並記錄是哪一條）
 // ============================================================
 
+// 全域儲存目前的未讀資訊
+const notifData = {
+    totalCount: 0,
+    unreadIds: new Set(),  // 「我的東西」中收到未讀的 id
+    unreadInCommands: false,
+    unreadInChats: false,
+};
+
 /**
- * 取得未讀通知數量
- * 比對「上次查看時間」之後的新留言/點讚
+ * 取得未讀通知資訊（哪些東西有人按讚/留言）
  */
-async function getUnreadCount() {
-    if (!state.user || !state.db) return 0;
+async function checkUnreadNotifications() {
+    if (!state.user || !state.db) return;
 
     const { collection, query, where, getDocs } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
 
     const lastSeenStr = localStorage.getItem('baozi_last_seen_notif');
     const lastSeenTime = lastSeenStr ? parseInt(lastSeenStr) : 0;
 
-    let count = 0;
+    // 重設
+    notifData.totalCount = 0;
+    notifData.unreadIds = new Set();
+    notifData.unreadInCommands = false;
+    notifData.unreadInChats = false;
 
     try {
-        // 先取得我自己分享過的東西的 id 列表
+        // 取得我自己分享的指令和對話
         const myCmdQ = query(
             collection(state.db, 'commands'),
             where('ownerId', '==', state.user.uid)
@@ -293,36 +304,53 @@ async function getUnreadCount() {
         );
 
         const [cmdSnap, chatSnap] = await Promise.all([getDocs(myCmdQ), getDocs(myChatQ)]);
-        const mySharedCmdIds = cmdSnap.docs.filter(d => d.data().shared).map(d => d.id);
-        const myChatIds = chatSnap.docs.map(d => d.id);
-        const allMyIds = [...mySharedCmdIds, ...myChatIds];
+        const mySharedCmdIds = new Set(cmdSnap.docs.filter(d => d.data().shared).map(d => d.id));
+        const myChatIds = new Set(chatSnap.docs.map(d => d.id));
 
-        if (allMyIds.length === 0) return 0;
+        if (mySharedCmdIds.size === 0 && myChatIds.size === 0) return;
 
-        // 取得別人在我東西上的留言（比對時間）
+        // 統計留言裡的未讀
         const commentsSnap = await getDocs(collection(state.db, 'comments'));
         commentsSnap.docs.forEach(d => {
             const data = d.data();
             if (data.authorId === state.user.uid) return;
-            if (!allMyIds.includes(data.targetId)) return;
             const t = (data.createdAt?.seconds || 0) * 1000;
-            if (t > lastSeenTime) count++;
+            if (t <= lastSeenTime) return;
+
+            if (mySharedCmdIds.has(data.targetId)) {
+                notifData.unreadIds.add(data.targetId);
+                notifData.unreadInCommands = true;
+                notifData.totalCount++;
+            } else if (myChatIds.has(data.targetId)) {
+                notifData.unreadIds.add(data.targetId);
+                notifData.unreadInChats = true;
+                notifData.totalCount++;
+            }
         });
 
-        // 取得別人對我東西的點讚
+        // 統計點讚裡的未讀
         const likesSnap = await getDocs(collection(state.db, 'likes'));
         likesSnap.docs.forEach(d => {
             const data = d.data();
             if (data.userId === state.user.uid) return;
-            if (!allMyIds.includes(data.targetId)) return;
             const t = (data.createdAt?.seconds || 0) * 1000;
-            if (t > lastSeenTime) count++;
+            if (t <= lastSeenTime) return;
+
+            if (mySharedCmdIds.has(data.targetId)) {
+                notifData.unreadIds.add(data.targetId);
+                notifData.unreadInCommands = true;
+                notifData.totalCount++;
+            } else if (myChatIds.has(data.targetId)) {
+                notifData.unreadIds.add(data.targetId);
+                notifData.unreadInChats = true;
+                notifData.totalCount++;
+            }
         });
     } catch (err) {
         console.warn('[包子同好會] 通知檢查失敗', err);
     }
 
-    return count;
+    updateAllBadges();
 }
 
 /**
@@ -330,13 +358,19 @@ async function getUnreadCount() {
  */
 function markNotificationsRead() {
     localStorage.setItem('baozi_last_seen_notif', Date.now().toString());
-    updateNotifBadge(0);
+    notifData.totalCount = 0;
+    notifData.unreadIds = new Set();
+    notifData.unreadInCommands = false;
+    notifData.unreadInChats = false;
+    updateAllBadges();
 }
 
 /**
- * 更新浮動按鈕和擴展選單上的紅點
+ * 更新所有紅點顯示（浮動按鈕、擴展選單、首頁選單按鈕、卡片）
  */
-function updateNotifBadge(count) {
+function updateAllBadges() {
+    const count = notifData.totalCount;
+
     // 浮動按鈕的紅點
     const floatBtn = document.getElementById('baozi-float-btn');
     if (floatBtn) {
@@ -353,7 +387,7 @@ function updateNotifBadge(count) {
         }
     }
 
-    // 擴展選單的紅點（在標題後面）
+    // 擴展選單的紅點
     const extHeader = document.querySelector('#baozi-extension-settings .inline-drawer-header b');
     if (extHeader) {
         let badge = extHeader.querySelector('.baozi-notif-badge-inline');
@@ -368,7 +402,96 @@ function updateNotifBadge(count) {
             badge.remove();
         }
     }
+
+    // 首頁選單按鈕的紅點（共享空間 / 分享對話）
+    updateMenuBadges();
 }
+
+/**
+ * 更新首頁選單按鈕上的紅點
+ */
+function updateMenuBadges() {
+    document.querySelectorAll('.baozi-menu-btn').forEach(btn => {
+        const target = btn.dataset.target;
+        let dot = btn.querySelector('.baozi-menu-dot');
+        const hasUnread = (target === 'shared-space' && notifData.unreadInCommands)
+                       || (target === 'shared-chats' && notifData.unreadInChats);
+
+        if (hasUnread) {
+            if (!dot) {
+                dot = document.createElement('span');
+                dot.className = 'baozi-menu-dot';
+                btn.appendChild(dot);
+            }
+        } else if (dot) {
+            dot.remove();
+        }
+    });
+}
+
+/**
+ * 清掉某張卡片的未讀標記（互動後呼叫）
+ * 同時把那條從 notifData 中移除，並更新各種紅點顯示
+ */
+function clearCardUnread(id, cardEl) {
+    if (!notifData.unreadIds.has(id)) return;
+
+    notifData.unreadIds.delete(id);
+    notifData.totalCount = Math.max(0, notifData.totalCount - 1);
+
+    // 移除卡片上的紅點
+    if (cardEl) {
+        cardEl.classList.remove('baozi-card-unread');
+        const dot = cardEl.querySelector('.baozi-card-dot');
+        if (dot) dot.remove();
+    }
+
+    // 重新計算此板塊還有沒有未讀（影響首頁紅點和總數）
+    recalcSectionUnread();
+    updateAllBadges();
+
+    // 更新「上次查看」時間（不過要保留還沒看的卡片紅點，所以這裡不直接寫 localStorage
+    // 改成全部都看完才更新時間）
+    if (notifData.totalCount === 0) {
+        localStorage.setItem('baozi_last_seen_notif', Date.now().toString());
+    }
+}
+
+/**
+ * 重新計算現在還有哪些板塊有未讀（用於首頁選單紅點）
+ */
+async function recalcSectionUnread() {
+    if (!state.user || !state.db) return;
+
+    notifData.unreadInCommands = false;
+    notifData.unreadInChats = false;
+
+    if (notifData.unreadIds.size === 0) return;
+
+    try {
+        const { collection, query, where, getDocs } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+
+        const myCmdQ = query(
+            collection(state.db, 'commands'),
+            where('ownerId', '==', state.user.uid)
+        );
+        const myChatQ = query(
+            collection(state.db, 'chats'),
+            where('ownerId', '==', state.user.uid)
+        );
+        const [cmdSnap, chatSnap] = await Promise.all([getDocs(myCmdQ), getDocs(myChatQ)]);
+        const mySharedCmdIds = new Set(cmdSnap.docs.filter(d => d.data().shared).map(d => d.id));
+        const myChatIds = new Set(chatSnap.docs.map(d => d.id));
+
+        for (const id of notifData.unreadIds) {
+            if (mySharedCmdIds.has(id)) notifData.unreadInCommands = true;
+            if (myChatIds.has(id)) notifData.unreadInChats = true;
+        }
+    } catch (err) {
+        console.warn('[包子同好會] 重算未讀失敗', err);
+    }
+}
+
 
 /**
  * 開始定期檢查通知（每 30 秒）
@@ -376,12 +499,11 @@ function updateNotifBadge(count) {
 function startNotificationPolling() {
     const check = async () => {
         if (state.isReady) {
-            const count = await getUnreadCount();
-            updateNotifBadge(count);
+            await checkUnreadNotifications();
         }
     };
-    check();  // 立刻檢查一次
-    setInterval(check, 30 * 1000);  // 每 30 秒檢查
+    check();
+    setInterval(check, 30 * 1000);
 }
 
 
@@ -899,11 +1021,6 @@ function openPanel() {
         drawer.classList.add('closedDrawer');
     }
 
-    // 標記通知為已讀
-    if (state.isReady) {
-        markNotificationsRead();
-    }
-
     renderMainContent();
 }
 
@@ -1160,6 +1277,9 @@ function renderHomeScreen(container) {
             }
         });
     });
+
+    // 更新選單上的紅點
+    updateMenuBadges();
 }
 
 
@@ -1306,9 +1426,13 @@ async function renderSharedSpaceScreen(container) {
         list.innerHTML = commands.map(cmd => {
             const likes = likesInfo[cmd.id] || { count: 0, likedByMe: false };
             const isMine = cmd.ownerId === state.user.uid;
+            const hasUnread = notifData.unreadIds.has(cmd.id);
             return `
-                <div class="baozi-card baozi-card-compact">
-                    <div class="baozi-card-owner">${escapeHtml(cmd.ownerNickname || '匿名')} 分享了${isMine ? ' <span class="baozi-tag-mine">我</span>' : ''}</div>
+                <div class="baozi-card baozi-card-compact ${hasUnread ? 'baozi-card-unread' : ''}">
+                    <div class="baozi-card-owner">
+                        ${escapeHtml(cmd.ownerNickname || '匿名')} 分享了${isMine ? ' <span class="baozi-tag-mine">我</span>' : ''}
+                        ${hasUnread ? '<span class="baozi-card-dot">🔴</span>' : ''}
+                    </div>
                     <div class="baozi-card-title">${escapeHtml(cmd.title)}</div>
                     <div class="baozi-card-actions">
                         <button class="baozi-btn-small baozi-btn-like ${likes.likedByMe ? 'liked' : ''}" data-action="like" data-id="${cmd.id}">
@@ -1331,6 +1455,9 @@ async function renderSharedSpaceScreen(container) {
                 const action = btn.dataset.action;
                 const id = btn.dataset.id;
                 const cmd = commands.find(c => c.id === id);
+
+                // 任何互動都把這條從未讀清掉
+                clearCardUnread(id, btn.closest('.baozi-card'));
 
                 if (action === 'view') {
                     showFullTextModal(cmd.title, cmd.content);
@@ -1402,9 +1529,13 @@ async function renderSharedChatsScreen(container) {
         list.innerHTML = chats.map(chat => {
             const isMine = chat.ownerId === state.user.uid;
             const likes = likesInfo[chat.id] || { count: 0, likedByMe: false };
+            const hasUnread = notifData.unreadIds.has(chat.id);
             return `
-                <div class="baozi-card baozi-card-compact" data-chat-id="${chat.id}">
-                    <div class="baozi-card-owner">${escapeHtml(chat.ownerNickname || '匿名')}${isMine ? ' <span class="baozi-tag-mine">我</span>' : ''}</div>
+                <div class="baozi-card baozi-card-compact ${hasUnread ? 'baozi-card-unread' : ''}" data-chat-id="${chat.id}">
+                    <div class="baozi-card-owner">
+                        ${escapeHtml(chat.ownerNickname || '匿名')}${isMine ? ' <span class="baozi-tag-mine">我</span>' : ''}
+                        ${hasUnread ? '<span class="baozi-card-dot">🔴</span>' : ''}
+                    </div>
                     <div class="baozi-card-title">${escapeHtml(chat.title || '(無標題)')}</div>
                     ${chat.preface ? `<div class="baozi-card-preface">${escapeHtml(chat.preface)}</div>` : ''}
                     <div class="baozi-card-actions">
@@ -1429,6 +1560,9 @@ async function renderSharedChatsScreen(container) {
                 const action = btn.dataset.action;
                 const id = btn.dataset.id;
                 const chat = chats.find(c => c.id === id);
+
+                // 任何互動都把這條從未讀清掉
+                clearCardUnread(id, btn.closest('.baozi-card'));
 
                 if (action === 'comment') {
                     toggleCommentPanel('chat', id);
@@ -1925,6 +2059,9 @@ function showFullTextModal(title, content) {
         copyBtn.textContent = ok ? '✓ 已複製' : '❌ 複製失敗，請手動選取';
         setTimeout(() => copyBtn.textContent = '📋 複製全部', 2000);
     });
+
+    // 讓彈窗可拖曳
+    makeModalDraggable(modal);
 }
 
 
@@ -1970,6 +2107,84 @@ function showFullChatModal(chat) {
             el.classList.toggle('baozi-masked-revealed');
         });
     });
+
+    // 讓彈窗可拖曳
+    makeModalDraggable(modal);
+}
+
+
+/**
+ * 讓彈窗可以拖曳（透過抓標題列）
+ * 用 flex 容器置中作為起始位置，拖動時切換成絕對定位
+ */
+function makeModalDraggable(overlay) {
+    const modal = overlay.querySelector('.baozi-modal');
+    const header = overlay.querySelector('.baozi-modal-header');
+    if (!modal || !header) return;
+
+    let startX, startY, modalStartX, modalStartY;
+    let dragging = false;
+    let moved = false;
+
+    const onDown = (e) => {
+        // 點到關閉按鈕、按鈕、文字輸入區的話不拖曳
+        const tag = (e.target.tagName || '').toUpperCase();
+        if (e.target.classList.contains('baozi-modal-close')) return;
+        if (tag === 'BUTTON' || tag === 'INPUT' || tag === 'TEXTAREA') return;
+
+        const point = e.touches ? e.touches[0] : e;
+        startX = point.clientX;
+        startY = point.clientY;
+
+        // 第一次拖曳前，從目前 flex 置中位置切換成絕對定位
+        const rect = modal.getBoundingClientRect();
+        modalStartX = rect.left;
+        modalStartY = rect.top;
+
+        // 把 modal 從 flex 容器中「脫離」出來，改成絕對定位
+        if (!modal.classList.contains('baozi-modal-dragged')) {
+            modal.classList.add('baozi-modal-dragged');
+            modal.style.left = modalStartX + 'px';
+            modal.style.top = modalStartY + 'px';
+        }
+
+        dragging = true;
+        moved = false;
+    };
+
+    const onMove = (e) => {
+        if (!dragging) return;
+        const point = e.touches ? e.touches[0] : e;
+        const dx = point.clientX - startX;
+        const dy = point.clientY - startY;
+
+        if (Math.abs(dx) > 3 || Math.abs(dy) > 3) moved = true;
+        if (!moved) return;
+
+        let newX = modalStartX + dx;
+        let newY = modalStartY + dy;
+
+        // 限制不要拖出螢幕（保留至少 60px 在螢幕內）
+        const padding = 60;
+        newX = Math.max(-modal.offsetWidth + padding, Math.min(newX, window.innerWidth - padding));
+        newY = Math.max(0, Math.min(newY, window.innerHeight - padding));
+
+        modal.style.left = newX + 'px';
+        modal.style.top = newY + 'px';
+
+        if (e.touches) e.preventDefault();
+    };
+
+    const onUp = () => {
+        dragging = false;
+    };
+
+    header.addEventListener('mousedown', onDown);
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+    header.addEventListener('touchstart', onDown, { passive: false });
+    document.addEventListener('touchmove', onMove, { passive: false });
+    document.addEventListener('touchend', onUp);
 }
 
 

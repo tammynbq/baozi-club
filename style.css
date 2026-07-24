@@ -1147,3 +1147,209 @@
         opacity: 0.5;
     }
 }
+
+/* ============================================================
+   ✨ 新功能樣式（搜尋/標籤/排序、表情反應、通知中心、成員牆）
+   ============================================================ */
+
+/* ---------- 工具列：搜尋 / 標籤 / 排序 ---------- */
+.baozi-toolbar {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.baozi-search {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 8px 12px;
+    border-radius: 10px;
+    border: 1.5px solid var(--baozi-cream-dark);
+    background: var(--baozi-cream);
+    color: var(--baozi-brown);
+    font-family: inherit;
+    font-size: 13px;
+}
+
+.baozi-search:focus {
+    outline: none;
+    border-color: var(--baozi-peach);
+    background: #fff;
+}
+
+.baozi-tagbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.baozi-tag-chip {
+    background: var(--baozi-cream);
+    color: var(--baozi-brown-soft);
+    border: 1.5px solid var(--baozi-cream-dark);
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    cursor: pointer;
+    font-family: inherit;
+    transition: all 0.2s;
+}
+
+.baozi-tag-chip:hover {
+    background: var(--baozi-yellow-light);
+}
+
+.baozi-tag-chip.active {
+    background: var(--baozi-peach);
+    color: #fff;
+    border-color: var(--baozi-peach);
+}
+
+.baozi-sort-btn {
+    align-self: flex-start;
+}
+
+/* ---------- 卡片上的標籤 ---------- */
+.baozi-card-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin: 6px 0;
+}
+
+.baozi-card-tag {
+    font-size: 11px;
+    color: var(--baozi-brown-soft);
+    background: var(--baozi-cream);
+    border: 1px solid var(--baozi-cream-dark);
+    padding: 1px 8px;
+    border-radius: 999px;
+}
+
+/* ---------- 表情反應 ---------- */
+.baozi-reactions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin: 8px 0;
+}
+
+.baozi-btn-react {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    background: var(--baozi-cream);
+    border: 1.5px solid var(--baozi-cream-dark);
+    border-radius: 999px;
+    padding: 3px 9px;
+    font-size: 14px;
+    cursor: pointer;
+    font-family: inherit;
+    transition: all 0.15s;
+    margin: 0;
+}
+
+.baozi-btn-react:hover {
+    background: var(--baozi-yellow-light);
+    transform: translateY(-1px);
+}
+
+.baozi-btn-react:active {
+    transform: scale(0.92);
+}
+
+.baozi-btn-react.reacted {
+    background: var(--baozi-peach-light);
+    border-color: var(--baozi-peach);
+}
+
+.baozi-react-count {
+    font-size: 11px;
+    color: var(--baozi-brown-soft);
+    font-weight: 600;
+    min-width: 6px;
+}
+
+/* ---------- 通知中心 ---------- */
+.baozi-notif-item {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    background: var(--baozi-cream);
+    border: 1.5px solid var(--baozi-cream-dark);
+    border-radius: 12px;
+    padding: 10px 12px;
+    margin-bottom: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.baozi-notif-item:hover {
+    background: var(--baozi-yellow-light);
+    border-color: var(--baozi-yellow);
+}
+
+.baozi-notif-icon {
+    font-size: 22px;
+    line-height: 1.2;
+    flex-shrink: 0;
+}
+
+.baozi-notif-body {
+    flex: 1;
+    font-size: 13px;
+    color: var(--baozi-brown);
+    line-height: 1.5;
+}
+
+.baozi-notif-text {
+    color: var(--baozi-brown-soft);
+    font-size: 12px;
+    background: #fff;
+    border-radius: 8px;
+    padding: 4px 8px;
+    margin: 4px 0;
+    border: 1px solid var(--baozi-cream-dark);
+}
+
+.baozi-notif-time {
+    font-size: 11px;
+    color: var(--baozi-brown-soft);
+    opacity: 0.8;
+    margin-top: 2px;
+}
+
+/* ---------- 成員牆 ---------- */
+.baozi-member-card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: var(--baozi-cream);
+    border: 1.5px solid var(--baozi-cream-dark);
+    border-radius: 12px;
+    padding: 10px 14px;
+    margin-bottom: 8px;
+}
+
+.baozi-member-avatar {
+    font-size: 26px;
+    flex-shrink: 0;
+}
+
+.baozi-member-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.baozi-member-name {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--baozi-brown);
+}
+
+.baozi-member-seen {
+    font-size: 12px;
+    color: var(--baozi-brown-soft);
+    margin-top: 2px;
+}

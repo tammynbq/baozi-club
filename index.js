@@ -78,12 +78,13 @@ const state = {
 async function initFirebase() {
     try {
         // 從 CDN 載入 Firebase SDK（使用 ES 模組）
-        const { initializeApp } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js');
+        const { initializeApp, getApps, getApp } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js');
         const { getAuth, signInAnonymously } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js');
         const { getFirestore } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
 
-        // 初始化 Firebase
-        state.firebase = initializeApp(FIREBASE_CONFIG);
+        // 初始化 Firebase（若先前已初始化過就直接沿用，
+        // 避免連線失敗重試時再次 initializeApp 觸發「App already exists」而整個崩掉）
+        state.firebase = getApps().length ? getApp() : initializeApp(FIREBASE_CONFIG);
         state.auth = getAuth(state.firebase);
         state.db = getFirestore(state.firebase);
 
@@ -273,6 +274,8 @@ const notifData = {
     unreadIds: new Set(),  // 「我的東西」中收到未讀的 id
     unreadInCommands: false,
     unreadInChats: false,
+    myCmdIds: new Set(),   // 快取「我分享的指令 id」，省得每次互動都連線重查
+    myChatIds: new Set(),  // 快取「我分享的對話 id」
 };
 
 /**
@@ -281,19 +284,19 @@ const notifData = {
 async function checkUnreadNotifications() {
     if (!state.user || !state.db) return;
 
-    const { collection, query, where, getDocs } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+    const { collection, query, where, getDocs, Timestamp } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
 
     const lastSeenStr = localStorage.getItem('baozi_last_seen_notif');
-    const lastSeenTime = lastSeenStr ? parseInt(lastSeenStr) : 0;
+    // 加 || 0 防止 localStorage 壞掉時 parseInt 變 NaN，讓 Timestamp.fromMillis 出錯
+    const lastSeenTime = (lastSeenStr ? parseInt(lastSeenStr) : 0) || 0;
 
     // 重設
-    notifData.totalCount = 0;
     notifData.unreadIds = new Set();
     notifData.unreadInCommands = false;
     notifData.unreadInChats = false;
 
     try {
-        // 取得我自己分享的指令和對話
+        // 取得我自己分享的指令和對話（只有自己的，數量有限）
         const myCmdQ = query(
             collection(state.db, 'commands'),
             where('ownerId', '==', state.user.uid)
@@ -306,50 +309,50 @@ async function checkUnreadNotifications() {
         const [cmdSnap, chatSnap] = await Promise.all([getDocs(myCmdQ), getDocs(myChatQ)]);
         const mySharedCmdIds = new Set(cmdSnap.docs.filter(d => d.data().shared).map(d => d.id));
         const myChatIds = new Set(chatSnap.docs.map(d => d.id));
+        // 快取起來，clearCardUnread / recalcSectionUnread 就不必再連線重查
+        notifData.myCmdIds = mySharedCmdIds;
+        notifData.myChatIds = myChatIds;
 
-        if (mySharedCmdIds.size === 0 && myChatIds.size === 0) return;
+        if (mySharedCmdIds.size > 0 || myChatIds.size > 0) {
+            // 只撈「上次查看之後」新增的留言與點讚，
+            // 不再每 30 秒把整個 comments / likes 集合搬回來（省流量也省 Firestore 讀取）
+            const sinceTs = Timestamp.fromMillis(lastSeenTime);
+            const newCommentsQ = query(
+                collection(state.db, 'comments'),
+                where('createdAt', '>', sinceTs)
+            );
+            const newLikesQ = query(
+                collection(state.db, 'likes'),
+                where('createdAt', '>', sinceTs)
+            );
+            const [commentsSnap, likesSnap] = await Promise.all([
+                getDocs(newCommentsQ),
+                getDocs(newLikesQ),
+            ]);
 
-        // 統計留言裡的未讀
-        const commentsSnap = await getDocs(collection(state.db, 'comments'));
-        commentsSnap.docs.forEach(d => {
-            const data = d.data();
-            if (data.authorId === state.user.uid) return;
-            const t = (data.createdAt?.seconds || 0) * 1000;
-            if (t <= lastSeenTime) return;
-
-            if (mySharedCmdIds.has(data.targetId)) {
-                notifData.unreadIds.add(data.targetId);
-                notifData.unreadInCommands = true;
-                notifData.totalCount++;
-            } else if (myChatIds.has(data.targetId)) {
-                notifData.unreadIds.add(data.targetId);
-                notifData.unreadInChats = true;
-                notifData.totalCount++;
-            }
-        });
-
-        // 統計點讚裡的未讀
-        const likesSnap = await getDocs(collection(state.db, 'likes'));
-        likesSnap.docs.forEach(d => {
-            const data = d.data();
-            if (data.userId === state.user.uid) return;
-            const t = (data.createdAt?.seconds || 0) * 1000;
-            if (t <= lastSeenTime) return;
-
-            if (mySharedCmdIds.has(data.targetId)) {
-                notifData.unreadIds.add(data.targetId);
-                notifData.unreadInCommands = true;
-                notifData.totalCount++;
-            } else if (myChatIds.has(data.targetId)) {
-                notifData.unreadIds.add(data.targetId);
-                notifData.unreadInChats = true;
-                notifData.totalCount++;
-            }
-        });
+            // 把新增的動作歸到對應的板塊（selfField 是「發動者」欄位，用來排除自己的動作）
+            const tally = (snap, selfField) => {
+                snap.docs.forEach(d => {
+                    const data = d.data();
+                    if (data[selfField] === state.user.uid) return;
+                    if (mySharedCmdIds.has(data.targetId)) {
+                        notifData.unreadIds.add(data.targetId);
+                        notifData.unreadInCommands = true;
+                    } else if (myChatIds.has(data.targetId)) {
+                        notifData.unreadIds.add(data.targetId);
+                        notifData.unreadInChats = true;
+                    }
+                });
+            };
+            tally(commentsSnap, 'authorId');
+            tally(likesSnap, 'userId');
+        }
     } catch (err) {
         console.warn('[包子同好會] 通知檢查失敗', err);
     }
 
+    // 紅點數字 =「有未讀的項目數」，和逐張卡片清除時的遞減保持一致
+    notifData.totalCount = notifData.unreadIds.size;
     updateAllBadges();
 }
 
@@ -437,7 +440,7 @@ function clearCardUnread(id, cardEl) {
     if (!notifData.unreadIds.has(id)) return;
 
     notifData.unreadIds.delete(id);
-    notifData.totalCount = Math.max(0, notifData.totalCount - 1);
+    notifData.totalCount = notifData.unreadIds.size;
 
     // 移除卡片上的紅點
     if (cardEl) {
@@ -460,35 +463,19 @@ function clearCardUnread(id, cardEl) {
 /**
  * 重新計算現在還有哪些板塊有未讀（用於首頁選單紅點）
  */
-async function recalcSectionUnread() {
-    if (!state.user || !state.db) return;
-
+function recalcSectionUnread() {
     notifData.unreadInCommands = false;
     notifData.unreadInChats = false;
 
     if (notifData.unreadIds.size === 0) return;
 
-    try {
-        const { collection, query, where, getDocs } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
-
-        const myCmdQ = query(
-            collection(state.db, 'commands'),
-            where('ownerId', '==', state.user.uid)
-        );
-        const myChatQ = query(
-            collection(state.db, 'chats'),
-            where('ownerId', '==', state.user.uid)
-        );
-        const [cmdSnap, chatSnap] = await Promise.all([getDocs(myCmdQ), getDocs(myChatQ)]);
-        const mySharedCmdIds = new Set(cmdSnap.docs.filter(d => d.data().shared).map(d => d.id));
-        const myChatIds = new Set(chatSnap.docs.map(d => d.id));
-
-        for (const id of notifData.unreadIds) {
-            if (mySharedCmdIds.has(id)) notifData.unreadInCommands = true;
-            if (myChatIds.has(id)) notifData.unreadInChats = true;
-        }
-    } catch (err) {
-        console.warn('[包子同好會] 重算未讀失敗', err);
+    // 直接用上次 checkUnreadNotifications 快取的 id 集合，
+    // 不必為了每一次卡片互動再連一次 Firestore（同步、即時、也不會卡）
+    const cmdIds = notifData.myCmdIds || new Set();
+    const chatIds = notifData.myChatIds || new Set();
+    for (const id of notifData.unreadIds) {
+        if (cmdIds.has(id)) notifData.unreadInCommands = true;
+        if (chatIds.has(id)) notifData.unreadInChats = true;
     }
 }
 
@@ -497,13 +484,24 @@ async function recalcSectionUnread() {
  * 開始定期檢查通知（每 30 秒）
  */
 function startNotificationPolling() {
+    let running = false;
     const check = async () => {
-        if (state.isReady) {
+        // 分頁在背景時就別去撈整個 comments/likes 集合，省得回到前景時卡一下；
+        // running 旗標避免上一輪還沒跑完又重疊發查詢。
+        if (!state.isReady || document.hidden || running) return;
+        running = true;
+        try {
             await checkUnreadNotifications();
+        } finally {
+            running = false;
         }
     };
     check();
     setInterval(check, 30 * 1000);
+    // 從背景切回前景時補查一次，讓紅點即時更新
+    document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) check();
+    });
 }
 
 
@@ -696,58 +694,42 @@ function buildUI() {
  */
 function makeDraggable(el, { onClick, saveKey } = {}) {
     let startX, startY, elStartX, elStartY;
-    let dragging = false;
     let moved = false;
 
-    const onDown = (e) => {
-        // 取得觸控或滑鼠的座標
-        const point = e.touches ? e.touches[0] : e;
-        startX = point.clientX;
-        startY = point.clientY;
-
-        const rect = el.getBoundingClientRect();
-        elStartX = rect.left;
-        elStartY = rect.top;
-
-        dragging = true;
-        moved = false;
-        el.classList.add('baozi-dragging');
-
-        // 防止觸控時頁面滾動
-        if (e.touches) e.preventDefault();
-    };
-
+    // 只在「按下～放開」這段期間才把 move/up 監聽掛到 document，
+    // 放開後立即移除，避免一堆全域監聽長期殘留拖累整個頁面的觸控與滾動。
     const onMove = (e) => {
-        if (!dragging) return;
         const point = e.touches ? e.touches[0] : e;
         const dx = point.clientX - startX;
         const dy = point.clientY - startY;
 
         // 超過 5px 才算拖曳（避免一般點擊被誤判）
         if (Math.abs(dx) > 5 || Math.abs(dy) > 5) moved = true;
+        if (!moved) return;
 
-        if (moved) {
-            let newX = elStartX + dx;
-            let newY = elStartY + dy;
+        let newX = elStartX + dx;
+        let newY = elStartY + dy;
 
-            // 限制不要拖出螢幕
-            const maxX = window.innerWidth - el.offsetWidth;
-            const maxY = window.innerHeight - el.offsetHeight;
-            newX = Math.max(0, Math.min(newX, maxX));
-            newY = Math.max(0, Math.min(newY, maxY));
+        // 限制不要拖出螢幕
+        const maxX = window.innerWidth - el.offsetWidth;
+        const maxY = window.innerHeight - el.offsetHeight;
+        newX = Math.max(0, Math.min(newX, maxX));
+        newY = Math.max(0, Math.min(newY, maxY));
 
-            el.style.left = newX + 'px';
-            el.style.top = newY + 'px';
-            el.style.right = 'auto';
-            el.style.bottom = 'auto';
+        el.style.left = newX + 'px';
+        el.style.top = newY + 'px';
+        el.style.right = 'auto';
+        el.style.bottom = 'auto';
 
-            if (e.touches) e.preventDefault();
-        }
+        // 拖曳中才擋掉頁面滾動（且事件可取消時才呼叫）
+        if (e.cancelable && e.touches) e.preventDefault();
     };
 
     const onUp = () => {
-        if (!dragging) return;
-        dragging = false;
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        document.removeEventListener('touchmove', onMove);
+        document.removeEventListener('touchend', onUp);
         el.classList.remove('baozi-dragging');
 
         if (!moved && onClick) {
@@ -763,14 +745,28 @@ function makeDraggable(el, { onClick, saveKey } = {}) {
         }
     };
 
-    // 滑鼠事件
+    const onDown = (e) => {
+        // 取得觸控或滑鼠的座標
+        const point = e.touches ? e.touches[0] : e;
+        startX = point.clientX;
+        startY = point.clientY;
+
+        const rect = el.getBoundingClientRect();
+        elStartX = rect.left;
+        elStartY = rect.top;
+
+        moved = false;
+        el.classList.add('baozi-dragging');
+
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+        document.addEventListener('touchmove', onMove, { passive: false });
+        document.addEventListener('touchend', onUp);
+    };
+
+    // 只在元素本身掛 down 事件；touchstart 用 passive 讓點擊/滾動維持流暢
     el.addEventListener('mousedown', onDown);
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
-    // 觸控事件（手機）
-    el.addEventListener('touchstart', onDown, { passive: false });
-    document.addEventListener('touchmove', onMove, { passive: false });
-    document.addEventListener('touchend', onUp);
+    el.addEventListener('touchstart', onDown, { passive: true });
 }
 
 
@@ -782,31 +778,9 @@ function makePanelDraggable(panel) {
     if (!header) return;
 
     let startX, startY, panelStartX, panelStartY;
-    let dragging = false;
     let moved = false;
 
-    const onDown = (e) => {
-        // 避免點到關閉按鈕時觸發
-        if (e.target.id === 'baozi-close' || e.target.closest('#baozi-close')) return;
-
-        const point = e.touches ? e.touches[0] : e;
-        startX = point.clientX;
-        startY = point.clientY;
-
-        const rect = panel.getBoundingClientRect();
-        panelStartX = rect.left;
-        panelStartY = rect.top;
-
-        dragging = true;
-        moved = false;
-        header.style.cursor = 'grabbing';
-
-        // 拖曳時切換成固定位置模式（取消 transform 置中）
-        panel.classList.add('baozi-dragging');
-    };
-
     const onMove = (e) => {
-        if (!dragging) return;
         const point = e.touches ? e.touches[0] : e;
         const dx = point.clientX - startX;
         const dy = point.clientY - startY;
@@ -829,12 +803,14 @@ function makePanelDraggable(panel) {
         panel.style.bottom = 'auto';
         panel.style.transform = 'none';
 
-        if (e.touches) e.preventDefault();
+        if (e.cancelable && e.touches) e.preventDefault();
     };
 
     const onUp = () => {
-        if (!dragging) return;
-        dragging = false;
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        document.removeEventListener('touchmove', onMove);
+        document.removeEventListener('touchend', onUp);
         header.style.cursor = 'grab';
 
         if (moved) {
@@ -850,13 +826,33 @@ function makePanelDraggable(panel) {
         }
     };
 
+    const onDown = (e) => {
+        // 避免點到關閉按鈕時觸發
+        if (e.target.id === 'baozi-close' || e.target.closest('#baozi-close')) return;
+
+        const point = e.touches ? e.touches[0] : e;
+        startX = point.clientX;
+        startY = point.clientY;
+
+        const rect = panel.getBoundingClientRect();
+        panelStartX = rect.left;
+        panelStartY = rect.top;
+
+        moved = false;
+        header.style.cursor = 'grabbing';
+
+        // 拖曳時切換成固定位置模式（取消 transform 置中）
+        panel.classList.add('baozi-dragging');
+
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+        document.addEventListener('touchmove', onMove, { passive: false });
+        document.addEventListener('touchend', onUp);
+    };
+
     header.style.cursor = 'grab';
     header.addEventListener('mousedown', onDown);
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
     header.addEventListener('touchstart', onDown, { passive: true });
-    document.addEventListener('touchmove', onMove, { passive: false });
-    document.addEventListener('touchend', onUp);
 }
 
 
@@ -1207,7 +1203,7 @@ function renderLoginScreen(container) {
             </div>
             <div class="baozi-form">
                 <label>你的暱稱</label>
-                <input type="text" id="baozi-nickname-input" placeholder="例如：包子" value="${localStorage.getItem('baozi_nickname') || ''}">
+                <input type="text" id="baozi-nickname-input" placeholder="例如：包子" value="${escapeHtml(localStorage.getItem('baozi_nickname') || '')}">
                 <label>圈內暗號</label>
                 <input type="password" id="baozi-secret-input" placeholder="只有圈內人知道的那個～">
                 <button class="baozi-btn-primary" id="baozi-login-btn">進入同好會 ✨</button>
@@ -1244,7 +1240,7 @@ function renderLoginScreen(container) {
 function renderHomeScreen(container) {
     container.innerHTML = `
         <div class="baozi-home">
-            <div class="baozi-greeting">你好，<b>${state.nickname}</b>～今天也辛苦啦 💕</div>
+            <div class="baozi-greeting">你好，<b>${escapeHtml(state.nickname)}</b>～今天也辛苦啦 💕</div>
             <div class="baozi-menu">
                 <button class="baozi-menu-btn" data-target="my-commands">
                     <span class="baozi-menu-icon">📚</span>
@@ -1656,7 +1652,8 @@ function renderShareChatScreen(container, editingChat = null) {
         </div>
     `;
 
-    let maskedRanges = editingChat?.maskedRanges ? [...editingChat.maskedRanges] : [];
+    // 深拷貝，避免 mergeMaskRanges 直接改到原始 editingChat 的範圍物件
+    let maskedRanges = editingChat?.maskedRanges ? editingChat.maskedRanges.map(r => ({ ...r })) : [];
 
     const contentArea = document.getElementById('baozi-chat-content');
     const maskList = document.getElementById('baozi-mask-list');
@@ -1676,7 +1673,16 @@ function renderShareChatScreen(container, editingChat = null) {
         });
     }
 
-    contentArea.addEventListener('input', updatePreview);
+    // 打字時不必每個按鍵都重繪整段預覽（長文會卡），用 rAF 合併成每幀最多一次
+    let previewRaf = null;
+    const schedulePreview = () => {
+        if (previewRaf) return;
+        previewRaf = requestAnimationFrame(() => {
+            previewRaf = null;
+            updatePreview();
+        });
+    };
+    contentArea.addEventListener('input', schedulePreview);
     updatePreview();
 
     // 新增模式才顯示訊息選擇器
@@ -2123,8 +2129,38 @@ function makeModalDraggable(overlay) {
     if (!modal || !header) return;
 
     let startX, startY, modalStartX, modalStartY;
-    let dragging = false;
     let moved = false;
+
+    const onMove = (e) => {
+        const point = e.touches ? e.touches[0] : e;
+        const dx = point.clientX - startX;
+        const dy = point.clientY - startY;
+
+        if (Math.abs(dx) > 3 || Math.abs(dy) > 3) moved = true;
+        if (!moved) return;
+
+        let newX = modalStartX + dx;
+        let newY = modalStartY + dy;
+
+        // 限制不要拖出螢幕（保留至少 60px 在螢幕內）
+        const padding = 60;
+        newX = Math.max(-modal.offsetWidth + padding, Math.min(newX, window.innerWidth - padding));
+        newY = Math.max(0, Math.min(newY, window.innerHeight - padding));
+
+        modal.style.left = newX + 'px';
+        modal.style.top = newY + 'px';
+
+        if (e.cancelable && e.touches) e.preventDefault();
+    };
+
+    // 放開時把全域監聽移除。彈窗每次打開都會呼叫本函式，
+    // 若不移除，開一次就多留一組 document 監聽，愈開愈卡。
+    const onUp = () => {
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        document.removeEventListener('touchmove', onMove);
+        document.removeEventListener('touchend', onUp);
+    };
 
     const onDown = (e) => {
         // 點到關閉按鈕、按鈕、文字輸入區的話不拖曳
@@ -2148,43 +2184,16 @@ function makeModalDraggable(overlay) {
             modal.style.top = modalStartY + 'px';
         }
 
-        dragging = true;
         moved = false;
-    };
 
-    const onMove = (e) => {
-        if (!dragging) return;
-        const point = e.touches ? e.touches[0] : e;
-        const dx = point.clientX - startX;
-        const dy = point.clientY - startY;
-
-        if (Math.abs(dx) > 3 || Math.abs(dy) > 3) moved = true;
-        if (!moved) return;
-
-        let newX = modalStartX + dx;
-        let newY = modalStartY + dy;
-
-        // 限制不要拖出螢幕（保留至少 60px 在螢幕內）
-        const padding = 60;
-        newX = Math.max(-modal.offsetWidth + padding, Math.min(newX, window.innerWidth - padding));
-        newY = Math.max(0, Math.min(newY, window.innerHeight - padding));
-
-        modal.style.left = newX + 'px';
-        modal.style.top = newY + 'px';
-
-        if (e.touches) e.preventDefault();
-    };
-
-    const onUp = () => {
-        dragging = false;
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+        document.addEventListener('touchmove', onMove, { passive: false });
+        document.addEventListener('touchend', onUp);
     };
 
     header.addEventListener('mousedown', onDown);
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
-    header.addEventListener('touchstart', onDown, { passive: false });
-    document.addEventListener('touchmove', onMove, { passive: false });
-    document.addEventListener('touchend', onUp);
+    header.addEventListener('touchstart', onDown, { passive: true });
 }
 
 

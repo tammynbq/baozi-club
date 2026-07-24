@@ -617,6 +617,51 @@ function startNotificationPolling() {
 }
 
 
+// ============================================================
+// 🔄 自動刷新（有新內容時，靜默更新目前的清單）
+// ============================================================
+
+// 目前畫面提供的「靜默刷新」函式（清單畫面會設定它；其他畫面留著也沒關係，
+// 因為函式自己會先檢查對應清單還在不在）
+let activeLiveRefresh = null;
+
+/**
+ * 現在適不適合自動刷新？在使用者「正在操作」時就先別打擾：
+ * 面板沒開 / 分頁在背景 / 正在打字 / 有展開的吐槽 / 有開著的彈窗 / 正在搜尋
+ */
+function canAutoRefresh() {
+    const panel = document.getElementById('baozi-panel');
+    if (!panel || !panel.classList.contains('baozi-open')) return false;
+    if (document.hidden) return false;
+
+    const ae = document.activeElement;
+    if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA')) return false;
+    if (document.querySelector('.baozi-modal-overlay')) return false;
+    if (document.querySelector('.baozi-comments[style*="block"]')) return false;
+
+    const search = document.querySelector('.baozi-search');
+    if (search && search.value.trim()) return false;
+
+    return true;
+}
+
+/** 每 15 秒，若目前畫面可安全刷新就靜默更新 */
+function startAutoRefresh() {
+    let running = false;
+    setInterval(async () => {
+        if (running || !state.isReady || !activeLiveRefresh || !canAutoRefresh()) return;
+        running = true;
+        try {
+            await activeLiveRefresh();
+        } catch (err) {
+            console.warn('[包子同好會] 自動刷新失敗', err);
+        } finally {
+            running = false;
+        }
+    }, 15 * 1000);
+}
+
+
 
 
 async function getSharedCommands() {
@@ -1404,7 +1449,7 @@ function renderHomeScreen(container) {
                 </button>
                 <button class="baozi-menu-btn" data-target="random">
                     <span class="baozi-menu-icon">🎲</span>
-                    <span>隨機抽一篇</span>
+                    <span>隨機抽指令</span>
                 </button>
                 <button class="baozi-menu-btn" data-target="settings">
                     <span class="baozi-menu-icon">⚙️</span>
@@ -1524,24 +1569,16 @@ async function renderMembersScreen(container) {
 }
 
 
-// ---------- 隨機抽一篇 ----------
+// ---------- 隨機抽一篇（只從共享空間的指令抽） ----------
 async function doRandomPick() {
     try {
-        const [commands, chats] = await Promise.all([getSharedCommands(), getSharedChats()]);
-        const pool = [
-            ...commands.map(c => ({ type: 'command', data: c })),
-            ...chats.map(c => ({ type: 'chat', data: c })),
-        ];
-        if (pool.length === 0) {
-            alert('還沒有任何分享可以抽～先去分享一個吧！');
+        const commands = await getSharedCommands();
+        if (commands.length === 0) {
+            alert('共享空間還沒有指令可以抽～先去分享一個吧！');
             return;
         }
-        const pick = pool[Math.floor(Math.random() * pool.length)];
-        if (pick.type === 'command') {
-            showFullTextModal('🎲 ' + (pick.data.title || '(無標題)'), pick.data.content);
-        } else {
-            showFullChatModal({ ...pick.data, title: '🎲 ' + (pick.data.title || '(無標題)') });
-        }
+        const pick = commands[Math.floor(Math.random() * commands.length)];
+        showFullTextModal('🎲 ' + (pick.title || '(無標題)'), pick.content);
     } catch (err) {
         alert('抽取失敗：' + err.message);
     }
@@ -1729,14 +1766,16 @@ async function renderSharedSpaceScreen(container) {
 
     const list = document.getElementById('baozi-shared-list');
     try {
-        const commands = await getSharedCommands();
+        let commands = await getSharedCommands();
         if (commands.length === 0) {
             list.innerHTML = '<div class="baozi-empty">🏠 還沒有人分享指令～趕快去分享一個吧！</div>';
+            // 就算目前是空的，也讓自動刷新能在別人分享後把清單補上
+            activeLiveRefresh = () => renderSharedSpaceScreen(container);
             return;
         }
 
         // 取得每個指令的表情反應資訊
-        const reactInfo = await getReactionsInfo('command', commands.map(c => c.id));
+        let reactInfo = await getReactionsInfo('command', commands.map(c => c.id));
 
         // ---- 篩選 / 排序狀態 ----
         let searchText = '';
@@ -1876,6 +1915,18 @@ async function renderSharedSpaceScreen(container) {
             renderList();
         });
 
+        // 靜默刷新：重抓資料後只重建清單（保留搜尋/標籤/排序、不閃「載入中」）
+        activeLiveRefresh = async () => {
+            if (!document.getElementById('baozi-shared-list')) return;  // 已離開此畫面
+            const fresh = await getSharedCommands();
+            commands = fresh;
+            reactInfo = await getReactionsInfo('command', fresh.map(c => c.id));
+            const body = document.getElementById('baozi-body');
+            const sc = body ? body.scrollTop : 0;
+            renderList();
+            if (body) body.scrollTop = sc;
+        };
+
         renderList();
     } catch (err) {
         list.innerHTML = '<div class="baozi-error">載入失敗：' + err.message + '</div>';
@@ -1906,14 +1957,15 @@ async function renderSharedChatsScreen(container) {
 
     const list = document.getElementById('baozi-chat-list');
     try {
-        const chats = await getSharedChats();
+        let chats = await getSharedChats();
         if (chats.length === 0) {
             list.innerHTML = '<div class="baozi-empty">💬 還沒有分享的對話～</div>';
+            activeLiveRefresh = () => renderSharedChatsScreen(container);
             return;
         }
 
         // 取得每個對話的表情反應資訊
-        const reactInfo = await getReactionsInfo('chat', chats.map(c => c.id));
+        let reactInfo = await getReactionsInfo('chat', chats.map(c => c.id));
 
         let searchText = '';
         document.getElementById('baozi-chat-toolbar').style.display = '';
@@ -2010,6 +2062,18 @@ async function renderSharedChatsScreen(container) {
             if (searchRaf) return;
             searchRaf = requestAnimationFrame(() => { searchRaf = null; renderList(); });
         });
+
+        // 靜默刷新：重抓資料後只重建清單（保留搜尋、不閃「載入中」）
+        activeLiveRefresh = async () => {
+            if (!document.getElementById('baozi-chat-list')) return;  // 已離開此畫面
+            const fresh = await getSharedChats();
+            chats = fresh;
+            reactInfo = await getReactionsInfo('chat', fresh.map(c => c.id));
+            const body = document.getElementById('baozi-body');
+            const sc = body ? body.scrollTop : 0;
+            renderList();
+            if (body) body.scrollTop = sc;
+        };
 
         renderList();
     } catch (err) {
@@ -2743,4 +2807,7 @@ function makeModalDraggable(overlay) {
 
     // 開始定期檢查通知
     startNotificationPolling();
+
+    // 開始自動刷新目前的清單（有新內容時靜默更新）
+    startAutoRefresh();
 })();

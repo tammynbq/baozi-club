@@ -206,6 +206,8 @@
     margin: 12px;
     border-radius: 10px;
     -webkit-overflow-scrolling: touch;
+    box-sizing: border-box;
+    min-height: 0;   /* 讓 flex 子元素能正常縮小並內部捲動 */
 }
 
 .baozi-modal-preface {
@@ -875,6 +877,7 @@
     border-radius: 16px;
     width: 100%;
     max-width: 500px;
+    box-sizing: border-box;
     /* 用 svh 避免 iPhone 工具列搶空間 */
     max-height: 80svh;
     max-height: 80dvh;
@@ -946,7 +949,9 @@
     line-height: 1.6;
     resize: none;
     outline: none;
-    min-height: 200px;
+    min-height: 0;         /* 別硬撐 200px，改由 flex 決定高度 */
+    box-sizing: border-box;
+    max-width: 100%;
     /* 允許手動選取和複製 */
     user-select: text;
     -webkit-user-select: text;
@@ -1145,6 +1150,23 @@
         display: inline !important;
         font-size: 11px;
         opacity: 0.5;
+    }
+
+    /* ---------- 看全文彈窗：跟面板一樣自動適配手機 ---------- */
+    .baozi-modal-overlay {
+        padding: 12px;
+    }
+
+    .baozi-modal {
+        width: calc(100vw - 24px);
+        max-width: 460px;
+        max-height: 85svh;
+        max-height: 85dvh;
+    }
+
+    .baozi-modal-textarea {
+        margin: 10px;
+        min-height: 140px;
     }
 }
 

@@ -497,13 +497,24 @@ async function recalcSectionUnread() {
  * 開始定期檢查通知（每 30 秒）
  */
 function startNotificationPolling() {
+    let running = false;
     const check = async () => {
-        if (state.isReady) {
+        // 分頁在背景時就別去撈整個 comments/likes 集合，省得回到前景時卡一下；
+        // running 旗標避免上一輪還沒跑完又重疊發查詢。
+        if (!state.isReady || document.hidden || running) return;
+        running = true;
+        try {
             await checkUnreadNotifications();
+        } finally {
+            running = false;
         }
     };
     check();
     setInterval(check, 30 * 1000);
+    // 從背景切回前景時補查一次，讓紅點即時更新
+    document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) check();
+    });
 }
 
 
@@ -696,58 +707,42 @@ function buildUI() {
  */
 function makeDraggable(el, { onClick, saveKey } = {}) {
     let startX, startY, elStartX, elStartY;
-    let dragging = false;
     let moved = false;
 
-    const onDown = (e) => {
-        // 取得觸控或滑鼠的座標
-        const point = e.touches ? e.touches[0] : e;
-        startX = point.clientX;
-        startY = point.clientY;
-
-        const rect = el.getBoundingClientRect();
-        elStartX = rect.left;
-        elStartY = rect.top;
-
-        dragging = true;
-        moved = false;
-        el.classList.add('baozi-dragging');
-
-        // 防止觸控時頁面滾動
-        if (e.touches) e.preventDefault();
-    };
-
+    // 只在「按下～放開」這段期間才把 move/up 監聽掛到 document，
+    // 放開後立即移除，避免一堆全域監聽長期殘留拖累整個頁面的觸控與滾動。
     const onMove = (e) => {
-        if (!dragging) return;
         const point = e.touches ? e.touches[0] : e;
         const dx = point.clientX - startX;
         const dy = point.clientY - startY;
 
         // 超過 5px 才算拖曳（避免一般點擊被誤判）
         if (Math.abs(dx) > 5 || Math.abs(dy) > 5) moved = true;
+        if (!moved) return;
 
-        if (moved) {
-            let newX = elStartX + dx;
-            let newY = elStartY + dy;
+        let newX = elStartX + dx;
+        let newY = elStartY + dy;
 
-            // 限制不要拖出螢幕
-            const maxX = window.innerWidth - el.offsetWidth;
-            const maxY = window.innerHeight - el.offsetHeight;
-            newX = Math.max(0, Math.min(newX, maxX));
-            newY = Math.max(0, Math.min(newY, maxY));
+        // 限制不要拖出螢幕
+        const maxX = window.innerWidth - el.offsetWidth;
+        const maxY = window.innerHeight - el.offsetHeight;
+        newX = Math.max(0, Math.min(newX, maxX));
+        newY = Math.max(0, Math.min(newY, maxY));
 
-            el.style.left = newX + 'px';
-            el.style.top = newY + 'px';
-            el.style.right = 'auto';
-            el.style.bottom = 'auto';
+        el.style.left = newX + 'px';
+        el.style.top = newY + 'px';
+        el.style.right = 'auto';
+        el.style.bottom = 'auto';
 
-            if (e.touches) e.preventDefault();
-        }
+        // 拖曳中才擋掉頁面滾動（且事件可取消時才呼叫）
+        if (e.cancelable && e.touches) e.preventDefault();
     };
 
     const onUp = () => {
-        if (!dragging) return;
-        dragging = false;
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        document.removeEventListener('touchmove', onMove);
+        document.removeEventListener('touchend', onUp);
         el.classList.remove('baozi-dragging');
 
         if (!moved && onClick) {
@@ -763,14 +758,28 @@ function makeDraggable(el, { onClick, saveKey } = {}) {
         }
     };
 
-    // 滑鼠事件
+    const onDown = (e) => {
+        // 取得觸控或滑鼠的座標
+        const point = e.touches ? e.touches[0] : e;
+        startX = point.clientX;
+        startY = point.clientY;
+
+        const rect = el.getBoundingClientRect();
+        elStartX = rect.left;
+        elStartY = rect.top;
+
+        moved = false;
+        el.classList.add('baozi-dragging');
+
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+        document.addEventListener('touchmove', onMove, { passive: false });
+        document.addEventListener('touchend', onUp);
+    };
+
+    // 只在元素本身掛 down 事件；touchstart 用 passive 讓點擊/滾動維持流暢
     el.addEventListener('mousedown', onDown);
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
-    // 觸控事件（手機）
-    el.addEventListener('touchstart', onDown, { passive: false });
-    document.addEventListener('touchmove', onMove, { passive: false });
-    document.addEventListener('touchend', onUp);
+    el.addEventListener('touchstart', onDown, { passive: true });
 }
 
 
@@ -782,31 +791,9 @@ function makePanelDraggable(panel) {
     if (!header) return;
 
     let startX, startY, panelStartX, panelStartY;
-    let dragging = false;
     let moved = false;
 
-    const onDown = (e) => {
-        // 避免點到關閉按鈕時觸發
-        if (e.target.id === 'baozi-close' || e.target.closest('#baozi-close')) return;
-
-        const point = e.touches ? e.touches[0] : e;
-        startX = point.clientX;
-        startY = point.clientY;
-
-        const rect = panel.getBoundingClientRect();
-        panelStartX = rect.left;
-        panelStartY = rect.top;
-
-        dragging = true;
-        moved = false;
-        header.style.cursor = 'grabbing';
-
-        // 拖曳時切換成固定位置模式（取消 transform 置中）
-        panel.classList.add('baozi-dragging');
-    };
-
     const onMove = (e) => {
-        if (!dragging) return;
         const point = e.touches ? e.touches[0] : e;
         const dx = point.clientX - startX;
         const dy = point.clientY - startY;
@@ -829,12 +816,14 @@ function makePanelDraggable(panel) {
         panel.style.bottom = 'auto';
         panel.style.transform = 'none';
 
-        if (e.touches) e.preventDefault();
+        if (e.cancelable && e.touches) e.preventDefault();
     };
 
     const onUp = () => {
-        if (!dragging) return;
-        dragging = false;
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        document.removeEventListener('touchmove', onMove);
+        document.removeEventListener('touchend', onUp);
         header.style.cursor = 'grab';
 
         if (moved) {
@@ -850,13 +839,33 @@ function makePanelDraggable(panel) {
         }
     };
 
+    const onDown = (e) => {
+        // 避免點到關閉按鈕時觸發
+        if (e.target.id === 'baozi-close' || e.target.closest('#baozi-close')) return;
+
+        const point = e.touches ? e.touches[0] : e;
+        startX = point.clientX;
+        startY = point.clientY;
+
+        const rect = panel.getBoundingClientRect();
+        panelStartX = rect.left;
+        panelStartY = rect.top;
+
+        moved = false;
+        header.style.cursor = 'grabbing';
+
+        // 拖曳時切換成固定位置模式（取消 transform 置中）
+        panel.classList.add('baozi-dragging');
+
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+        document.addEventListener('touchmove', onMove, { passive: false });
+        document.addEventListener('touchend', onUp);
+    };
+
     header.style.cursor = 'grab';
     header.addEventListener('mousedown', onDown);
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
     header.addEventListener('touchstart', onDown, { passive: true });
-    document.addEventListener('touchmove', onMove, { passive: false });
-    document.addEventListener('touchend', onUp);
 }
 
 
@@ -1676,7 +1685,16 @@ function renderShareChatScreen(container, editingChat = null) {
         });
     }
 
-    contentArea.addEventListener('input', updatePreview);
+    // 打字時不必每個按鍵都重繪整段預覽（長文會卡），用 rAF 合併成每幀最多一次
+    let previewRaf = null;
+    const schedulePreview = () => {
+        if (previewRaf) return;
+        previewRaf = requestAnimationFrame(() => {
+            previewRaf = null;
+            updatePreview();
+        });
+    };
+    contentArea.addEventListener('input', schedulePreview);
     updatePreview();
 
     // 新增模式才顯示訊息選擇器
@@ -2123,8 +2141,38 @@ function makeModalDraggable(overlay) {
     if (!modal || !header) return;
 
     let startX, startY, modalStartX, modalStartY;
-    let dragging = false;
     let moved = false;
+
+    const onMove = (e) => {
+        const point = e.touches ? e.touches[0] : e;
+        const dx = point.clientX - startX;
+        const dy = point.clientY - startY;
+
+        if (Math.abs(dx) > 3 || Math.abs(dy) > 3) moved = true;
+        if (!moved) return;
+
+        let newX = modalStartX + dx;
+        let newY = modalStartY + dy;
+
+        // 限制不要拖出螢幕（保留至少 60px 在螢幕內）
+        const padding = 60;
+        newX = Math.max(-modal.offsetWidth + padding, Math.min(newX, window.innerWidth - padding));
+        newY = Math.max(0, Math.min(newY, window.innerHeight - padding));
+
+        modal.style.left = newX + 'px';
+        modal.style.top = newY + 'px';
+
+        if (e.cancelable && e.touches) e.preventDefault();
+    };
+
+    // 放開時把全域監聽移除。彈窗每次打開都會呼叫本函式，
+    // 若不移除，開一次就多留一組 document 監聽，愈開愈卡。
+    const onUp = () => {
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        document.removeEventListener('touchmove', onMove);
+        document.removeEventListener('touchend', onUp);
+    };
 
     const onDown = (e) => {
         // 點到關閉按鈕、按鈕、文字輸入區的話不拖曳
@@ -2148,43 +2196,16 @@ function makeModalDraggable(overlay) {
             modal.style.top = modalStartY + 'px';
         }
 
-        dragging = true;
         moved = false;
-    };
 
-    const onMove = (e) => {
-        if (!dragging) return;
-        const point = e.touches ? e.touches[0] : e;
-        const dx = point.clientX - startX;
-        const dy = point.clientY - startY;
-
-        if (Math.abs(dx) > 3 || Math.abs(dy) > 3) moved = true;
-        if (!moved) return;
-
-        let newX = modalStartX + dx;
-        let newY = modalStartY + dy;
-
-        // 限制不要拖出螢幕（保留至少 60px 在螢幕內）
-        const padding = 60;
-        newX = Math.max(-modal.offsetWidth + padding, Math.min(newX, window.innerWidth - padding));
-        newY = Math.max(0, Math.min(newY, window.innerHeight - padding));
-
-        modal.style.left = newX + 'px';
-        modal.style.top = newY + 'px';
-
-        if (e.touches) e.preventDefault();
-    };
-
-    const onUp = () => {
-        dragging = false;
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+        document.addEventListener('touchmove', onMove, { passive: false });
+        document.addEventListener('touchend', onUp);
     };
 
     header.addEventListener('mousedown', onDown);
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
-    header.addEventListener('touchstart', onDown, { passive: false });
-    document.addEventListener('touchmove', onMove, { passive: false });
-    document.addEventListener('touchend', onUp);
+    header.addEventListener('touchstart', onDown, { passive: true });
 }
 
 

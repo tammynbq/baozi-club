@@ -1153,20 +1153,29 @@
     }
 
     /* ---------- 看全文彈窗：跟面板一樣自動適配手機 ---------- */
+    /* 靠上對齊 + 可捲動：確保標題列（含關閉鈕與拖曳把手）一定在畫面內，
+       不會像置中時被頂出螢幕上緣而抓不到、也移不動 */
     .baozi-modal-overlay {
-        padding: 12px;
+        align-items: flex-start;
+        justify-content: center;
+        padding: 0;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
     }
 
     .baozi-modal {
         width: calc(100vw - 24px);
         max-width: 460px;
-        max-height: 85svh;
-        max-height: 85dvh;
+        /* 高度留白給頂端狀態列與底部酒館輸入列，避免頭尾被切 */
+        max-height: 74svh;
+        max-height: 74dvh;
+        /* 上方留一點空隙，標題列穩穩在畫面裡；之後可自行拖曳移動 */
+        margin: 12px auto 24px;
     }
 
     .baozi-modal-textarea {
         margin: 10px;
-        min-height: 140px;
+        min-height: 120px;
     }
 }
 

@@ -621,13 +621,18 @@ function fmtTime(iso) {
     return d.toDateString() === now.toDateString() ? hm : `${d.getMonth() + 1}/${d.getDate()} ${hm}`;
 }
 
+/** 大包子轉送的圖片網址是相對路徑（/club/media?...），要接上大包子的網址。 */
+function mediaUrl(u) {
+    return u && u.startsWith('/') ? bot.url + u : (u || '');
+}
+
 function messageHtml(m) {
     const text = esc(m.text).replace(/\n/g, '<br>');
-    const imgs = (m.images || []).map(u => `<img class="baozi-chat-img" src="${esc(u)}" loading="lazy">`).join('');
-    const files = (m.files || []).map(f => `<a class="baozi-chat-file" href="${esc(f.url)}" target="_blank" rel="noopener" data-raw>📎 ${esc(f.name)}</a>`).join('');
+    const imgs = (m.images || []).map(u => `<img class="baozi-chat-img" src="${esc(mediaUrl(u))}" loading="lazy">`).join('');
+    const files = (m.files || []).map(f => `<a class="baozi-chat-file" href="${esc(mediaUrl(f.url))}" target="_blank" rel="noopener" data-raw>📎 ${esc(f.name)}</a>`).join('');
     return `
         <div class="baozi-chat-msg ${m.mine ? 'mine' : ''}" data-id="${esc(m.id)}">
-            <img class="baozi-chat-avatar" src="${esc(m.avatar)}" alt="">
+            <img class="baozi-chat-avatar" src="${esc(mediaUrl(m.avatar))}" alt="">
             <div class="baozi-chat-main">
                 <div class="baozi-chat-meta"><b>${esc(m.author)}</b> <span>${fmtTime(m.ts)}</span></div>
                 ${text ? `<div class="baozi-chat-bubble" data-raw>${text}</div>` : ''}

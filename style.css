@@ -2054,3 +2054,112 @@ body.baozi-selecting #chat .baozi-sel-copy { cursor: pointer; }
 .baozi-ai-sub { font-size: 11px; color: var(--baozi-brown-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .baozi-ai-form { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
 .baozi-ai-form[hidden] { display: none; }
+
+/* ---------- ⭐ 收藏 ---------- */
+.baozi-fav-head { cursor: pointer; }
+.baozi-fav-preview { font-size: 13px; line-height: 1.6; margin: 4px 0; white-space: pre-wrap; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.baozi-fav-card.open .baozi-fav-preview { display: none; }
+.baozi-fav-detail { display: none; }
+.baozi-fav-card.open .baozi-fav-detail { display: block; margin-top: 8px; }
+.baozi-fav-floor { background: var(--baozi-cream); border-radius: 10px; padding: 8px 12px; margin-bottom: 8px; }
+.baozi-fav-floor.user { opacity: .8; }
+.baozi-fav-name { font-size: 12px; font-weight: 700; color: var(--baozi-brown-soft); margin-bottom: 2px; }
+.baozi-fav-text { font-size: 13px; line-height: 1.7; white-space: pre-wrap; word-break: break-word; }
+.baozi-fav-imgs { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.baozi-fav-imgs img { width: 96px; height: 96px; object-fit: cover; border-radius: 8px; cursor: zoom-in; }
+
+/* ============================================================
+   🌈 主題：跟隨酒館（body.baozi-theme-st）
+   ============================================================
+   把 club 自己的顏色變數換成酒館主題（SmartTheme）的顏色。
+   酒館沒有的變數就退回包子奶油色。白底的卡片、輸入框另外蓋掉。 */
+body.baozi-theme-st #baozi-panel,
+body.baozi-theme-st .baozi-select-bar,
+body.baozi-theme-st .baozi-toast,
+body.baozi-theme-st .baozi-shot-card {
+    --st-text: var(--SmartThemeBodyColor, #8B5A3C);
+    --st-bg: var(--SmartThemeBlurTintColor, #FFF8EC);
+    --st-card: var(--SmartThemeChatTintColor, rgba(255, 255, 255, 0.85));
+    --st-border: var(--SmartThemeBorderColor, #F5E6C8);
+    --st-accent: var(--SmartThemeQuoteColor, #FFB5A7);
+    --st-em: var(--SmartThemeEmColor, #F4A5B5);
+    --st-shadow: var(--SmartThemeShadowColor, rgba(139, 90, 60, 0.15));
+    --baozi-cream: var(--st-bg);
+    --baozi-cream-dark: var(--st-border);
+    --baozi-brown: var(--st-text);
+    --baozi-brown-soft: color-mix(in srgb, var(--st-text) 65%, transparent);
+    --baozi-peach: var(--st-accent);
+    --baozi-peach-light: color-mix(in srgb, var(--st-accent) 35%, transparent);
+    --baozi-yellow: var(--st-em);
+    --baozi-yellow-light: color-mix(in srgb, var(--st-em) 30%, transparent);
+    --baozi-pink: var(--st-em);
+    --baozi-shadow: var(--st-shadow);
+    --baozi-shadow-strong: var(--st-shadow);
+    color: var(--st-text);
+}
+body.baozi-theme-st #baozi-panel,
+body.baozi-theme-st .baozi-select-bar,
+body.baozi-theme-st .baozi-toast,
+body.baozi-theme-st .baozi-shot-card {
+    background: var(--st-bg) !important;
+    -webkit-backdrop-filter: blur(var(--SmartThemeBlurStrength, 12px));
+    backdrop-filter: blur(var(--SmartThemeBlurStrength, 12px));
+}
+body.baozi-theme-st .baozi-header,
+body.baozi-theme-st .baozi-tabbar,
+body.baozi-theme-st .baozi-lib-sticky {
+    background: color-mix(in srgb, var(--st-bg) 92%, var(--st-accent)) !important;
+    border-color: var(--st-border) !important;
+}
+body.baozi-theme-st .bz-desk,
+body.baozi-theme-st .bz-desk-alt { background: transparent !important; }
+body.baozi-theme-st .baozi-card,
+body.baozi-theme-st .bz-w,
+body.baozi-theme-st .baozi-chat-bubble,
+body.baozi-theme-st .baozi-ai-item,
+body.baozi-theme-st .baozi-album-item,
+body.baozi-theme-st .baozi-notif-item,
+body.baozi-theme-st .baozi-menu-btn,
+body.baozi-theme-st .baozi-info,
+body.baozi-theme-st .baozi-greeting,
+body.baozi-theme-st .baozi-lib-body,
+body.baozi-theme-st .baozi-fav-floor {
+    background: var(--st-card) !important;
+    color: var(--st-text) !important;
+    border-color: var(--st-border) !important;
+    box-shadow: 0 2px 10px var(--st-shadow) !important;
+}
+body.baozi-theme-st .baozi-chat-msg.mine .baozi-chat-bubble,
+body.baozi-theme-st .bz-pick,
+body.baozi-theme-st .baozi-today-card {
+    background: color-mix(in srgb, var(--st-card) 70%, var(--st-accent)) !important;
+    color: var(--st-text) !important;
+}
+body.baozi-theme-st .bz-weather {
+    background: color-mix(in srgb, var(--st-card) 75%, #7fb2e5) !important;
+    color: var(--st-text) !important;
+}
+body.baozi-theme-st .bz-weather .bz-t,
+body.baozi-theme-st .bz-clock,
+body.baozi-theme-st .bz-name,
+body.baozi-theme-st .baozi-card-title,
+body.baozi-theme-st h2,
+body.baozi-theme-st h3 { color: var(--st-text) !important; }
+body.baozi-theme-st .baozi-search,
+body.baozi-theme-st .baozi-form input,
+body.baozi-theme-st .baozi-chat-input textarea,
+body.baozi-theme-st .baozi-lib-char select,
+body.baozi-theme-st .baozi-btn-small,
+body.baozi-theme-st .baozi-tag-chip,
+body.baozi-theme-st .baozi-back {
+    background: color-mix(in srgb, var(--st-card) 85%, transparent) !important;
+    color: var(--st-text) !important;
+    border-color: var(--st-border) !important;
+}
+body.baozi-theme-st .baozi-btn-small.baozi-on,
+body.baozi-theme-st .baozi-tag-chip.active,
+body.baozi-theme-st .baozi-btn-primary {
+    background: var(--st-accent) !important;
+    border-color: var(--st-accent) !important;
+    color: var(--st-bg) !important;
+}

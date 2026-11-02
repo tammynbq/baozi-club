@@ -151,6 +151,7 @@ function refreshBar() {
         parts.length ? `已選 ${parts.join('、')}` : '點句子選起來；點圖片是選那張圖';
     bar.querySelector('[data-a="shot"]').disabled = !sents && !imgs;
     bar.querySelector('[data-a="images"]').disabled = !imgs;
+    bar.querySelector('[data-a="fav"]').disabled = !floors && !imgs;
 }
 
 function setPicked(mes, s, on) {
@@ -252,6 +253,56 @@ function keepScroll(fn) {
     [80, 250, 600].forEach(ms => setTimeout(fix, ms));
 }
 
+/** 收藏用：有點到任何一句（或一張圖）的樓，整樓拿出來（全文 + 樓裡全部的圖）。 */
+function readFavFloors() {
+    const out = [];
+    document.querySelectorAll('#chat .mes').forEach(mes => {
+        if (!pickedSentences(mes).size && !mes.querySelector('.baozi-sel-img.picked')) return;
+        const copy = mes.querySelector('.baozi-sel-copy');
+        out.push({
+            name: mes.querySelector('.name_text')?.textContent?.trim() || '',
+            is_user: mes.getAttribute('is_user') === 'true' || mes.classList.contains('is_user'),
+            text: (copy?.innerText || '').replace(/\n{3,}/g, '\n\n').trim(),
+            srcs: [...mes.querySelectorAll('.baozi-sel-img')].map(el => el.dataset.src),
+        });
+    });
+    return out;
+}
+
+async function saveFav(floors) {
+    if (!floors.length) return;
+    const toast = document.createElement('div');
+    toast.className = 'baozi-toast';
+    toast.innerHTML = '<div class="baozi-toast-title"><span class="baozi-chat-spin"></span> 收藏中…</div>';
+    document.body.appendChild(toast);
+    localizeLive(toast);
+    try {
+        let imgCount = 0;
+        for (const f of floors) {
+            f.shot_ids = [];
+            for (const src of f.srcs) {
+                try {
+                    const blob = await imageBlob(src);
+                    const res = await upload({ blob, kind: 'fav' }, { post: false });
+                    f.shot_ids.push(res.shot.id);
+                    imgCount++;
+                } catch (e) { console.warn('[包子同好會] 收藏的圖存不了', e); }
+            }
+            delete f.srcs;
+        }
+        const prompt = activePrompt();
+        await botFetch('/club/favs', {
+            method: 'POST',
+            body: { floors, character: currentCharacter(), prompt_id: prompt?.id || null },
+        });
+        toast.innerHTML = `<div class="baozi-toast-title">⭐ 收藏好了</div>
+            <div>${floors.length} 樓${imgCount ? `、${imgCount} 張圖` : ''}・在桌面的「⭐ 收藏」看得到，只有你看得到</div>`;
+    } catch (e) {
+        toast.innerHTML = `<div class="baozi-toast-title">❌ 沒收藏成功</div><div>${esc(e.message)}</div>`;
+    }
+    setTimeout(() => toast.remove(), 3500);
+}
+
 /** 畫面中間現在停著的那一樓。 */
 function currentFloor() {
     const mid = window.innerHeight / 2;
@@ -321,6 +372,7 @@ export function enterSelectMode() {
         <div class="baozi-select-actions">
             <button class="baozi-btn-small baozi-on" data-a="shot">📸 做成圖片</button>
             <button class="baozi-btn-small" data-a="images">🖼️ 分享圖片</button>
+            <button class="baozi-btn-small" data-a="fav">⭐ 收藏整樓</button>
             <button class="baozi-btn-small" data-a="cancel">✕ 取消</button>
             <span class="baozi-select-jump">
                 <button class="baozi-btn-small" data-a="top" title="這一樓的開頭">⤒ 樓頂</button>
@@ -337,6 +389,11 @@ export function enterSelectMode() {
             const picked = readSelection();
             exitSelectMode();
             await makeShot(picked);
+        }
+        if (a === 'fav') {
+            const floors = readFavFloors();
+            exitSelectMode();
+            await saveFav(floors);
         }
         if (a === 'images') {
             const imgs = readSelection().flatMap(p => p.imageSrcs);
@@ -846,5 +903,97 @@ export async function renderAlbumScreen(container, ui) {
                 <div class="baozi-shot-actions"><button class="baozi-btn-small" data-a="close">✕</button></div>`);
             modal.querySelector('[data-a="close"]').addEventListener('click', () => modal.remove());
         }
+    });
+}
+
+
+// ============================================================
+// ⭐ 收藏（club 裡的一個畫面）
+// ============================================================
+
+export async function renderFavsScreen(container, ui) {
+    container.innerHTML = `
+        <div class="baozi-screen">
+            <div class="baozi-screen-header">
+                <button class="baozi-back" id="baozi-back">← 回首頁</button>
+                <h3>⭐ 收藏</h3>
+            </div>
+            <div class="baozi-setup-hint">選取模式點到哪幾樓，按「⭐ 收藏整樓」就會整樓存到這裡。只有你看得到。</div>
+            <div class="baozi-list" id="baozi-fav-list"><div class="baozi-loading">載入中...</div></div>
+        </div>`;
+    container.querySelector('#baozi-back').addEventListener('click', ui.back);
+    const list = container.querySelector('#baozi-fav-list');
+    let favs;
+    try {
+        favs = (await botFetch('/club/favs')).favs;
+    } catch (e) {
+        list.innerHTML = `<div class="baozi-error">${esc(e.message)}</div>`;
+        return;
+    }
+    if (!favs.length) {
+        list.innerHTML = '<div class="baozi-empty">還沒有收藏～在聊天上進截圖模式，點幾句再按「⭐ 收藏整樓」</div>';
+        return;
+    }
+    list.innerHTML = favs.map(f => `
+        <div class="baozi-card baozi-fav-card" data-id="${f.id}">
+            <div class="baozi-fav-head" data-a="toggle">
+                <div class="baozi-card-owner">${esc(f.character || '')}${f.prompt_title ? ` · <span data-raw>《${esc(f.prompt_title)}》</span>` : ''} · ${new Date(f.created_at).toLocaleDateString()}</div>
+                <div class="baozi-fav-preview" data-raw>${esc(f.preview)}</div>
+                <div class="baozi-card-owner" style="opacity:.7">${f.floors} 樓${f.images ? `・${f.images} 張圖` : ''} <span class="baozi-lib-caret">▾</span></div>
+            </div>
+            <div class="baozi-fav-detail"></div>
+        </div>`).join('');
+    list.addEventListener('click', async (ev) => {
+        const card = ev.target.closest('.baozi-fav-card');
+        if (!card) return;
+        const a = ev.target.closest('[data-a]')?.dataset.a;
+        const detail = card.querySelector('.baozi-fav-detail');
+        if (a === 'del') {
+            if (!confirm(t('刪掉這筆收藏？'))) return;
+            await botFetch(`/club/favs/${card.dataset.id}`, { method: 'DELETE' });
+            card.remove();
+            return;
+        }
+        if (a === 'copy') {
+            const ok = await ui.copy(card._text || '');
+            ev.target.textContent = ok ? '✓ 已複製' : '❌ 複製失敗';
+            return;
+        }
+        if (a === 'img') {
+            const viewer = document.createElement('div');
+            viewer.className = 'baozi-chat-viewer';
+            viewer.innerHTML = `<img src="${ev.target.closest('img').src}" alt="">`;
+            viewer.addEventListener('click', () => viewer.remove());
+            document.body.appendChild(viewer);
+            return;
+        }
+        if (a !== 'toggle') return;
+        if (card.classList.toggle('open') && !detail.innerHTML) {
+            detail.innerHTML = '<div class="baozi-loading">載入中...</div>';
+            try {
+                const fav = await botFetch(`/club/favs/${card.dataset.id}`);
+                card._text = fav.floors.map(f => `${f.name}：\n${f.text}`).join('\n\n');
+                detail.innerHTML = fav.floors.map((f, i) => `
+                    <div class="baozi-fav-floor ${f.is_user ? 'user' : ''}">
+                        <div class="baozi-fav-name">${esc(f.name)}</div>
+                        <div class="baozi-fav-text" data-raw>${esc(f.text)}</div>
+                        <div class="baozi-fav-imgs" data-floor="${i}"></div>
+                    </div>`).join('') + `
+                    <div class="baozi-card-actions">
+                        <button class="baozi-btn-small" data-a="copy">📋 複製全文</button>
+                        <button class="baozi-btn-small" data-a="del">🗑️ 刪掉</button>
+                    </div>`;
+                fav.floors.forEach((f, i) => {
+                    const box = detail.querySelector(`[data-floor="${i}"]`);
+                    for (const sid of f.shot_ids) {
+                        shotUrl(sid).then(u => { box.insertAdjacentHTML('beforeend', `<img src="${u}" data-a="img" alt="">`); })
+                            .catch(() => {});
+                    }
+                });
+            } catch (e) {
+                detail.innerHTML = `<div class="baozi-error">${esc(e.message)}</div>`;
+            }
+        }
+        card.querySelector('.baozi-lib-caret').textContent = card.classList.contains('open') ? '▴' : '▾';
     });
 }

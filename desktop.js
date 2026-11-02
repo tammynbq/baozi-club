@@ -137,6 +137,7 @@ const APPS = [
     ['album', '🖼️', '相簿', '#E3D7F5'],
     ['dice', '🎲', '抽一則', '#C9E7DC'],
     ['notifications', '🔔', '通知', '#FFE9A8'],
+    ['favs', '⭐', '收藏', '#FFE1C9'],
 ];
 
 let clockTimer = null;
@@ -172,6 +173,7 @@ export async function renderDesktop(container, ui) {
         if (app === 'album') ui.go('album');
         if (app === 'dice') ui.dice();
         if (app === 'notifications') ui.notifications();
+        if (app === 'favs') ui.go('favs');
     };
 
     const grid = container.querySelector('#bz-grid');

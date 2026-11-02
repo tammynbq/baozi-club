@@ -12,7 +12,7 @@ import {
     bot, isBotLoggedIn, botLogout, refreshMe, renderBotLoginScreen,
     renderLibraryScreen, renderChatScreen, closeChat,
     rollDice, renderDiceSettings, DICE_EMPTY,
-    fetchNotifications, renderNotificationsScreen,
+    fetchNotifications, renderNotificationsScreen, startAutoMark,
 } from './bot.js';
 import { localizeLive, refreshLocale, t } from './i18n.js';
 
@@ -2812,5 +2812,6 @@ function makeModalDraggable(overlay) {
         updateExtStatus('✨ 點按鈕，用大包子的登入碼登入', 'ok');
     }
     startNotifCheck();
+    startAutoMark();
     console.log('[包子同好會] 啟動完成 🥟');
 })();

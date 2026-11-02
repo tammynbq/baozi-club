@@ -643,6 +643,12 @@ export async function renderChatScreen(container, ui) {
         for (const m of messages) {
             if (seen.has(m.id)) continue;
             seen.add(m.id);
+            // 自己剛送出、還在轉圈圈的那則先被推回來了：把轉圈圈的那份拿掉
+            if (m.mine) {
+                const dup = [...list.querySelectorAll('.baozi-chat-msg.pending')]
+                    .find(el => el.querySelector('.baozi-chat-bubble')?.textContent === m.text);
+                dup?.remove();
+            }
             list.insertAdjacentHTML('beforeend', messageHtml(m));
             if (BigInt(m.id) > BigInt(lastId || '0')) lastId = m.id;
             added = true;
@@ -696,26 +702,60 @@ export async function renderChatScreen(container, ui) {
     function onVisible() {
         if (document.hidden || !alive()) return;
         if (!ws) { clearTimeout(retryTimer); retry = 0; connect(); }
+        // 切到背景時線可能早就斷了、只是還沒發現：先補一次，不等它
+        else catchUp().catch(() => {});
     }
     document.addEventListener('visibilitychange', onVisible);
 
     chatSession = { stop };
 
-    async function send() {
+    // 按下送出就先把訊息放上去（轉圈圈），大包子貼好會把那則回傳，換成真的；
+    // 不等 WebSocket 推回來 —— 手機的連線有時候其實斷了，等推送會看起來像按了沒反應。
+    let pendingSeq = 0;
+
+    function myAvatar() {
+        const mine = list.querySelectorAll('.baozi-chat-msg.mine:not(.pending) .baozi-chat-avatar');
+        return mine.length ? mine[mine.length - 1].getAttribute('src') : '';
+    }
+
+    async function sendText(text) {
+        if (list.querySelector('.baozi-loading, .baozi-empty')) list.innerHTML = '';
+        const tempId = 'pending-' + (++pendingSeq);
+        list.insertAdjacentHTML('beforeend', messageHtml({
+            id: tempId, author: bot.me?.name || '', avatar: myAvatar(), text,
+            ts: new Date().toISOString(), mine: true,
+        }));
+        const el = list.querySelector(`[data-id="${tempId}"]`);
+        el.classList.add('pending');
+        el.querySelector('.baozi-chat-meta').insertAdjacentHTML('beforeend', '<span class="baozi-chat-spin"></span>');
+        list.scrollTop = list.scrollHeight;
+        try {
+            const res = await botFetch('/club/chat', { method: 'POST', body: { text } });
+            el.remove();
+            if (res.message) append([res.message]);
+            else await catchUp();
+        } catch (e) {
+            el.classList.remove('pending');
+            el.classList.add('failed');
+            el.querySelector('.baozi-chat-spin')?.remove();
+            el.querySelector('.baozi-chat-main').insertAdjacentHTML('beforeend',
+                `<button class="baozi-chat-retry">❌ ${esc(t('沒送出，點一下重送'))}</button>`);
+            el.querySelector('.baozi-chat-retry').addEventListener('click', () => {
+                el.remove();
+                sendText(text);
+            });
+        }
+        // 順便確認連線還活著：斷了就重連（重連會補上漏掉的）
+        if (!ws || ws.readyState !== WebSocket.OPEN) { clearTimeout(retryTimer); retry = 0; connect(); }
+    }
+
+    function send() {
         const text = input.value.trim();
         if (!text) return;
-        sendBtn.disabled = true;
-        try {
-            await botFetch('/club/chat', { method: 'POST', body: { text } });
-            input.value = '';
-            input.style.height = '';
-            if (!ws || ws.readyState !== WebSocket.OPEN) await catchUp();
-        } catch (e) {
-            alert(t(e.message));
-        } finally {
-            sendBtn.disabled = false;
-            input.focus();
-        }
+        input.value = '';
+        input.style.height = '';
+        input.focus();
+        sendText(text);
     }
 
     sendBtn.addEventListener('click', send);

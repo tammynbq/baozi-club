@@ -1699,3 +1699,29 @@ a.baozi-btn-small {
 .baozi-lib-recbox { display: flex; gap: 6px; margin-top: 8px; align-items: center; }
 .baozi-lib-recbox[hidden] { display: none; }
 .baozi-lib-recbox .baozi-search { flex: 1; min-width: 0; }
+
+/* ---------- 💬 送出中／沒送出 ---------- */
+.baozi-chat-msg.pending .baozi-chat-bubble { opacity: .6; }
+.baozi-chat-spin {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    margin-left: 6px;
+    vertical-align: -1px;
+    border: 2px solid var(--baozi-peach);
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: baozi-spin .7s linear infinite;
+}
+@keyframes baozi-spin { to { transform: rotate(360deg); } }
+.baozi-chat-msg.failed .baozi-chat-bubble { background: #ffe1e1; }
+.baozi-chat-retry {
+    margin-top: 4px;
+    border: none;
+    background: none;
+    color: #d0453d;
+    font-size: 12px;
+    cursor: pointer;
+    font-family: inherit;
+    padding: 0;
+}

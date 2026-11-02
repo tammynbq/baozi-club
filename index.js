@@ -15,7 +15,7 @@ import {
     fetchNotifications, renderNotificationsScreen, startAutoMark,
 } from './bot.js';
 import { localizeLive, refreshLocale, t } from './i18n.js';
-import { enterSelectMode, renderAlbumScreen } from './shots.js';
+import { enterSelectMode, renderAlbumScreen, renderFavsScreen } from './shots.js';
 import { renderDesktop } from './desktop.js';
 import { renderAiSettings } from './aidesign.js';
 
@@ -1446,6 +1446,19 @@ function renderLoginScreen(container) {
 }
 
 
+// ---------- 🌈 主題 ----------
+const THEME_KEY = 'baozi_theme';
+
+function currentTheme() {
+    try { return localStorage.getItem(THEME_KEY) || 'baozi'; } catch { return 'baozi'; }
+}
+
+/** baozi＝包子奶油色；st＝跟隨酒館主題。存在這支手機上（每支手機的酒館主題本來就不同）。 */
+function applyTheme(theme = currentTheme()) {
+    document.body.classList.toggle('baozi-theme-st', theme === 'st');
+}
+
+
 // ---------- 分頁列 + 桌面 ----------
 function setActiveTab(tab) {
     document.querySelectorAll('#baozi-tabbar [data-tab]').forEach(b =>
@@ -1472,6 +1485,10 @@ function go(tab, opts = {}) {
             renderAlbumScreen(body, { back: () => renderHomeScreen(body), closePanel });
             break;
         case 'settings': setActiveTab('settings'); renderSettingsScreen(body); break;
+        case 'favs':
+            setActiveTab('');
+            renderFavsScreen(body, { back: () => renderHomeScreen(body), copy: copyToClipboard });
+            break;
     }
 }
 
@@ -2376,6 +2393,12 @@ function renderSettingsScreen(container) {
                     <div style="font-size:11px; opacity:.6; word-break:break-all;">${escapeHtml(bot.url)}</div>
                 </div>
                 <hr style="margin: 18px 0; border-color: rgba(0,0,0,0.1);">
+                <div class="baozi-setup-section-title">🌈 主題</div>
+                <div class="baozi-dice-pools" id="baozi-theme-pick">
+                    <button class="baozi-tag-chip ${currentTheme() === 'baozi' ? 'active' : ''}" data-theme="baozi">🥟 包子奶油</button>
+                    <button class="baozi-tag-chip ${currentTheme() === 'st' ? 'active' : ''}" data-theme="st">🍷 跟隨酒館</button>
+                </div>
+                <hr style="margin: 18px 0; border-color: rgba(0,0,0,0.1);">
                 <div class="baozi-setup-section-title">🎲 骰子</div>
                 <div id="baozi-dice-settings"></div>
                 <hr style="margin: 18px 0; border-color: rgba(0,0,0,0.1);">
@@ -2392,6 +2415,13 @@ function renderSettingsScreen(container) {
 
     document.getElementById('baozi-back').addEventListener('click', () => renderHomeScreen(container));
     renderDiceSettings(document.getElementById('baozi-dice-settings'));
+    document.getElementById('baozi-theme-pick').addEventListener('click', (ev) => {
+        const chip = ev.target.closest('[data-theme]');
+        if (!chip) return;
+        try { localStorage.setItem(THEME_KEY, chip.dataset.theme); } catch { /* 存不了 */ }
+        applyTheme(chip.dataset.theme);
+        document.querySelectorAll('#baozi-theme-pick [data-theme]').forEach(c => c.classList.toggle('active', c === chip));
+    });
     renderAiSettings(document.getElementById('baozi-ai-settings'));
     document.getElementById('baozi-bot-logout').addEventListener('click', () => {
         if (confirm(t('登出？之後要到 Discord 打 /club 登入 重新拿碼。'))) {
@@ -2829,6 +2859,7 @@ function makeModalDraggable(overlay) {
     await new Promise(r => setTimeout(r, 2000));
 
     buildUI();
+    applyTheme();
 
     if (isBotLoggedIn()) {
         enterWithBot();

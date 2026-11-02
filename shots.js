@@ -20,30 +20,106 @@ function esc(str) {
 
 
 // ============================================================
-// 選取模式
+// 選取模式：挑句子
 // ============================================================
+// 一進來就把每一樓的文字切成一句一句（遇到。！？…連同後面的右引號、或換行就切），
+// 包成 <span class="baozi-sent" data-s="第幾句">。點一句就選那一句，同一句被斜體之類
+// 切成好幾段時，點哪一段都是整句。離開時把每一樓的 HTML 還原，聊天紀錄不會被改到。
 
 let selecting = false;
 let bar = null;
+const originals = new Map();     // .mes_text → 原本的 innerHTML
+
+const END_RE = /([。！？!?]+|…+|⋯+)([」』”’）)\]】》]*)/g;
+const BLOCK_TAGS = new Set(['P', 'DIV', 'LI', 'BLOCKQUOTE', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'PRE', 'TR']);
 
 function messageImages(mes) {
     return [...mes.querySelectorAll('.mes_img, .mes_img_container img, .mes_text img')]
         .filter(img => img.naturalWidth > 0 || img.complete);
 }
 
+/** 把一樓的文字切成句子。回傳句子總數。 */
+function splitSentences(textEl) {
+    let idx = 0;
+    let started = false;      // 這一句已經有字了嗎
+    let newline = false;      // 下一句前面要不要換行
+    const startSentence = () => { if (started) { idx++; started = false; } };
+
+    const walk = (node) => {
+        for (const child of [...node.childNodes]) {
+            if (child.nodeType === Node.TEXT_NODE) {
+                const text = child.nodeValue;
+                if (!text) continue;
+                const frag = document.createDocumentFragment();
+                // 先照換行切，再照句尾標點切
+                const lines = text.split('\n');
+                lines.forEach((line, li) => {
+                    if (li > 0) { startSentence(); newline = true; }
+                    let last = 0;
+                    const pieces = [];
+                    END_RE.lastIndex = 0;
+                    let m;
+                    while ((m = END_RE.exec(line))) {
+                        pieces.push([line.slice(last, m.index + m[0].length), true]);
+                        last = m.index + m[0].length;
+                    }
+                    if (last < line.length) pieces.push([line.slice(last), false]);
+                    for (const [piece, ends] of pieces) {
+                        if (!piece.trim()) { frag.append(piece); continue; }
+                        const span = document.createElement('span');
+                        span.className = 'baozi-sent';
+                        span.dataset.s = String(idx);
+                        if (!started && newline) span.dataset.nl = '1';
+                        span.textContent = piece;
+                        frag.append(span);
+                        started = true;
+                        newline = false;
+                        if (ends) startSentence();
+                    }
+                });
+                child.replaceWith(frag);
+            } else if (child.nodeType === Node.ELEMENT_NODE) {
+                if (child.tagName === 'BR') { startSentence(); newline = true; continue; }
+                if (child.tagName === 'IMG' || child.tagName === 'SCRIPT' || child.tagName === 'STYLE') continue;
+                const block = BLOCK_TAGS.has(child.tagName);
+                if (block) { startSentence(); newline = true; }
+                walk(child);
+                if (block) { startSentence(); newline = true; }
+            }
+        }
+    };
+    walk(textEl);
+    return idx + (started ? 1 : 0);
+}
+
+function pickedSentences(mes) {
+    return new Set([...mes.querySelectorAll('.baozi-sent.picked')].map(s => s.dataset.s));
+}
+
 function counts() {
-    const msgs = document.querySelectorAll('#chat .mes.baozi-picked').length;
+    let sents = 0, floors = 0;
+    document.querySelectorAll('#chat .mes').forEach(mes => {
+        const n = pickedSentences(mes).size;
+        if (n) { sents += n; floors++; }
+    });
     const imgs = document.querySelectorAll('#chat img.baozi-img-picked').length;
-    return { msgs, imgs };
+    return { sents, floors, imgs };
 }
 
 function refreshBar() {
     if (!bar) return;
-    const { msgs, imgs } = counts();
+    const { sents, floors, imgs } = counts();
+    const parts = [];
+    if (sents) parts.push(`${sents} 句（${floors} 樓）`);
+    if (imgs) parts.push(`${imgs} 張圖`);
     bar.querySelector('[data-k="count"]').textContent =
-        msgs || imgs ? `已選 ${msgs} 則${imgs ? `、${imgs} 張圖` : ''}` : '點訊息勾起來；點圖片是選那張圖';
-    bar.querySelector('[data-a="shot"]').disabled = !msgs;
+        parts.length ? `已選 ${parts.join('、')}` : '點句子選起來；點圖片是選那張圖';
+    bar.querySelector('[data-a="shot"]').disabled = !sents && !imgs;
     bar.querySelector('[data-a="images"]').disabled = !imgs;
+}
+
+function setPicked(mes, s, on) {
+    mes.querySelectorAll(`.baozi-sent[data-s="${s}"]`).forEach(el => el.classList.toggle('picked', on));
 }
 
 function onChatClick(ev) {
@@ -52,18 +128,29 @@ function onChatClick(ev) {
     if (!mes) return;
     ev.preventDefault();
     ev.stopPropagation();
-    const img = ev.target.closest('img');
-    if (img && messageImages(mes).includes(img)) {
-        img.classList.toggle('baozi-img-picked');
+    if (ev.target.closest('.baozi-pick-all')) {
+        const all = [...new Set([...mes.querySelectorAll('.baozi-sent')].map(s => s.dataset.s))];
+        const allOn = all.length && all.every(s => mes.querySelector(`.baozi-sent[data-s="${s}"]`).classList.contains('picked'));
+        all.forEach(s => setPicked(mes, s, !allOn));
+    } else if (ev.target.closest('img') && messageImages(mes).includes(ev.target.closest('img'))) {
+        ev.target.closest('img').classList.toggle('baozi-img-picked');
     } else {
-        mes.classList.toggle('baozi-picked');
+        const sent = ev.target.closest('.baozi-sent');
+        if (sent) setPicked(mes, sent.dataset.s, !sent.classList.contains('picked'));
     }
+    mes.classList.toggle('baozi-picked', pickedSentences(mes).size > 0
+        || !!mes.querySelector('img.baozi-img-picked'));
     refreshBar();
 }
 
 export function exitSelectMode() {
     selecting = false;
     document.body.classList.remove('baozi-selecting');
+    for (const [el, html] of originals) {
+        if (document.body.contains(el)) el.innerHTML = html;
+    }
+    originals.clear();
+    document.querySelectorAll('#chat .baozi-pick-all').forEach(el => el.remove());
     document.querySelectorAll('#chat .baozi-picked').forEach(el => el.classList.remove('baozi-picked'));
     document.querySelectorAll('#chat .baozi-img-picked').forEach(el => el.classList.remove('baozi-img-picked'));
     document.removeEventListener('click', onChatClick, true);
@@ -71,11 +158,60 @@ export function exitSelectMode() {
     bar = null;
 }
 
+/** 趁還沒還原之前，把選了什麼讀出來（還原之後那些 span 就不見了）。 */
+function readSelection() {
+    const out = [];
+    document.querySelectorAll('#chat .mes').forEach(mes => {
+        const picked = pickedSentences(mes);
+        const imgs = [...mes.querySelectorAll('img.baozi-img-picked')];
+        if (!picked.size && !imgs.length) return;
+        // 照句子順序組起來：連續的接在一起（原本有換行就換行），跳過的地方放「……」
+        const sentences = new Map();
+        mes.querySelectorAll('.baozi-sent').forEach(span => {
+            const s = Number(span.dataset.s);
+            if (!picked.has(span.dataset.s)) return;
+            const cur = sentences.get(s) || { text: '', nl: false };
+            if (!cur.text && span.dataset.nl) cur.nl = true;
+            cur.text += span.textContent;
+            sentences.set(s, cur);
+        });
+        let text = '';
+        let prev = null;
+        for (const s of [...sentences.keys()].sort((a, b) => a - b)) {
+            const { text: piece, nl } = sentences.get(s);
+            if (prev === null) text = piece.trim();
+            else if (s === prev + 1) text += (nl ? '\n' : '') + (nl ? piece.trim() : piece);
+            else text += '\n……\n' + piece.trim();
+            prev = s;
+        }
+        out.push({
+            isUser: mes.getAttribute('is_user') === 'true' || mes.classList.contains('is_user'),
+            name: mes.querySelector('.name_text')?.textContent?.trim() || '',
+            avatarSrc: mes.querySelector('.avatar img')?.src || '',
+            text: text.trim(),
+            imageSrcs: imgs.map(img => img.currentSrc || img.src),
+        });
+    });
+    return out;
+}
+
 export function enterSelectMode() {
     if (selecting) return;
     if (!document.querySelector('#chat .mes')) { alert(t('先打開一個有對話的聊天～')); return; }
     selecting = true;
     document.body.classList.add('baozi-selecting');
+    document.querySelectorAll('#chat .mes').forEach(mes => {
+        const textEl = mes.querySelector('.mes_text');
+        if (!textEl) return;
+        originals.set(textEl, textEl.innerHTML);
+        if (splitSentences(textEl) > 0) {
+            const btn = document.createElement('button');
+            btn.className = 'baozi-pick-all';
+            btn.textContent = '全選這樓';
+            mes.appendChild(btn);
+            localizeLive(btn);
+        }
+    });
     document.addEventListener('click', onChatClick, true);
     bar = document.createElement('div');
     bar.className = 'baozi-select-bar';
@@ -92,12 +228,12 @@ export function enterSelectMode() {
         const a = ev.target.closest('[data-a]')?.dataset.a;
         if (a === 'cancel') exitSelectMode();
         if (a === 'shot') {
-            const mesList = [...document.querySelectorAll('#chat .mes.baozi-picked')];
+            const picked = readSelection();
             exitSelectMode();
-            await makeShot(mesList);
+            await makeShot(picked);
         }
         if (a === 'images') {
-            const imgs = [...document.querySelectorAll('#chat img.baozi-img-picked')];
+            const imgs = readSelection().flatMap(p => p.imageSrcs);
             exitSelectMode();
             await shareImages(imgs);
         }
@@ -183,21 +319,16 @@ function roundRect(ctx, x, y, w, h, r) {
     ctx.closePath();
 }
 
-async function collect(mesList) {
+async function collect(picked) {
     const items = [];
-    for (const mes of mesList) {
-        const isUser = mes.getAttribute('is_user') === 'true' || mes.classList.contains('is_user');
-        const textEl = mes.querySelector('.mes_text');
-        // 用畫面上顯示的文字（已經是排版後的樣子，沒有 * 之類的符號）
-        const text = (textEl?.innerText || '').replace(/\n{3,}/g, '\n\n').trim();
-        const name = mes.querySelector('.name_text')?.textContent?.trim() || '';
-        const avatar = await loadImage(mes.querySelector('.avatar img')?.src);
+    for (const p of picked) {
+        const avatar = await loadImage(p.avatarSrc);
         const images = [];
-        for (const img of messageImages(mes)) {
-            const loaded = await loadImage(img.currentSrc || img.src);
+        for (const src of p.imageSrcs) {
+            const loaded = await loadImage(src);
             if (loaded) images.push(loaded);
         }
-        items.push({ isUser, text, name, avatar, images });
+        items.push({ isUser: p.isUser, text: p.text, name: p.name, avatar, images });
     }
     return items;
 }
@@ -323,11 +454,11 @@ function today() {
     return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
 }
 
-async function makeShot(mesList) {
-    if (!mesList.length) return;
+async function makeShot(picked) {
+    if (!picked.length) return;
     const modal = openModal('<div class="baozi-loading">📸 畫圖中…</div>');
     try {
-        const items = await collect(mesList);
+        const items = await collect(picked);
         const character = currentCharacter();
         const prompt = activePrompt();
         const charName = items.find(i => !i.isUser)?.name || character || '';
@@ -350,12 +481,12 @@ async function makeShot(mesList) {
 // ============================================================
 
 /** 圖太大（> 8MB）就縮小轉 jpg，Discord 免費帳號上限 10MB。 */
-async function imageBlob(img) {
-    const res = await fetch(img.currentSrc || img.src);
+async function imageBlob(src) {
+    const res = await fetch(src);
     let blob = await res.blob();
     const okType = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(blob.type);
     if (okType && blob.size <= 8 * 1024 * 1024) return blob;
-    const loaded = await loadImage(img.currentSrc || img.src);
+    const loaded = await loadImage(src);
     const scale = Math.min(1, Math.sqrt((6 * 1024 * 1024 * 4) / (loaded.width * loaded.height * 4)));
     const c = document.createElement('canvas');
     c.width = Math.round(loaded.width * scale);
@@ -365,12 +496,12 @@ async function imageBlob(img) {
     return blob;
 }
 
-async function shareImages(imgs) {
-    if (!imgs.length) return;
+async function shareImages(srcs) {
+    if (!srcs.length) return;
     const modal = openModal('<div class="baozi-loading">🖼️ 讀圖中…</div>');
     try {
         const blobs = [];
-        for (const img of imgs) blobs.push({ blob: await imageBlob(img), kind: 'image' });
+        for (const src of srcs) blobs.push({ blob: await imageBlob(src), kind: 'image' });
         showPreview(modal, blobs, { character: currentCharacter(), prompt: activePrompt() });
     } catch (e) {
         modal.querySelector('.baozi-shot-body').innerHTML = `<div class="baozi-error">${esc(e.message)}</div>`;

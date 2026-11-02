@@ -1753,32 +1753,32 @@ a.baozi-btn-small {
 
 /* ---------- 📸 選取模式 ---------- */
 body.baozi-selecting #chat .mes { cursor: pointer; position: relative; }
-body.baozi-selecting #chat .mes::after {
-    content: '';
-    position: absolute;
-    top: 8px;
-    right: 8px;
-    width: 22px;
-    height: 22px;
-    border-radius: 50%;
-    border: 2px solid #FFB5A7;
-    background: rgba(255, 255, 255, 0.85);
-    z-index: 5;
-    pointer-events: none;
-}
 body.baozi-selecting #chat .mes.baozi-picked {
-    outline: 3px solid #FFB5A7;
-    outline-offset: -3px;
-    background-color: rgba(255, 181, 167, 0.12);
+    background-color: rgba(255, 181, 167, 0.08);
 }
-body.baozi-selecting #chat .mes.baozi-picked::after {
-    content: '✓';
-    color: #fff;
-    background: #FFB5A7;
-    font-size: 14px;
-    line-height: 22px;
-    text-align: center;
-    font-weight: 700;
+body.baozi-selecting #chat .baozi-sent {
+    border-bottom: 1px dashed rgba(255, 181, 167, 0.55);
+    border-radius: 3px;
+    transition: background-color .15s;
+}
+body.baozi-selecting #chat .baozi-sent.picked {
+    background-color: rgba(255, 181, 167, 0.55);
+    border-bottom-color: transparent;
+    color: inherit;
+}
+body.baozi-selecting #chat .baozi-pick-all {
+    position: absolute;
+    top: 6px;
+    right: 8px;
+    z-index: 5;
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    border: 1.5px solid #FFB5A7;
+    background: rgba(255, 248, 236, 0.92);
+    color: #8B5A3C;
+    font-family: inherit;
+    cursor: pointer;
 }
 body.baozi-selecting #chat img.baozi-img-picked {
     outline: 4px solid #F4A5B5;

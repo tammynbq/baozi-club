@@ -182,6 +182,7 @@ export function renderBotLoginScreen(container, { onDone, onLegacy } = {}) {
 const FILTERS = [
     ['all', '全部'],
     ['today', '☀️ 今日'],
+    ['recommended', '💌 力推'],
     ['unplayed', '沒玩過'],
     ['played', '玩過'],
     ['saved', '⭐ 喜歡'],
@@ -215,7 +216,7 @@ function cardHtml(cmd, { open = false, pinned = '' } = {}) {
         .join('');
     const tags = cmd.topics.length
         ? `<div class="baozi-card-tags" data-raw>${cmd.topics.map(t => `<span class="baozi-card-tag">#${esc(t)}</span>`).join('')}</div>` : '';
-    const badges = `${cmd.today ? '<span class="baozi-lib-badge">☀️ 今日</span>' : ''}${cmd.status === 'saved' ? '<span class="baozi-lib-badge">⭐</span>' : ''}`;
+    const badges = `${cmd.today ? '<span class="baozi-lib-badge">☀️ 今日</span>' : ''}${cmd.rec ? `<span class="baozi-lib-badge">💌 ${esc(cmd.rec.from)}推</span>` : ''}${cmd.status === 'saved' ? '<span class="baozi-lib-badge">⭐</span>' : ''}`;
     return `
     <div class="baozi-card baozi-card-compact baozi-lib-card ${open ? 'open' : ''} ${pinned ? 'pinned' : ''}" data-id="${cmd.id}">
         ${pinned ? `<div class="baozi-lib-pinned">${pinned}</div>` : ''}
@@ -229,9 +230,14 @@ function cardHtml(cmd, { open = false, pinned = '' } = {}) {
     </div>`;
 }
 
+function friendName() {
+    return bot.me?.friends?.[0]?.name || '朋友';
+}
+
 function detailHtml(cmd, character) {
     const usedNow = character && cmd.characters.includes(character);
     return `
+        ${cmd.rec ? `<div class="baozi-lib-rec">💌 ${esc(cmd.rec.from)}推薦你來玩這個！${cmd.rec.note ? `<div class="baozi-lib-rec-note" data-raw>「${esc(cmd.rec.note)}」</div>` : ''}</div>` : ''}
         <div class="baozi-lib-body" data-raw>${esc(cmd.body || '')}</div>
         ${cmd.note ? `<div class="baozi-lib-note">📝 <span data-raw>${esc(cmd.note)}</span></div>` : ''}
         <div class="baozi-card-actions">
@@ -240,7 +246,12 @@ function detailHtml(cmd, character) {
             ${character ? `<button class="baozi-btn-small ${usedNow ? 'baozi-on' : ''}" data-a="used">${usedNow ? '✅' : '☑️'} ${esc(character)}玩過</button>` : ''}
             <button class="baozi-btn-small ${cmd.status === 'saved' ? 'baozi-on' : ''}" data-a="saved">⭐</button>
             <button class="baozi-btn-small ${cmd.status === 'blocked' ? 'baozi-on' : ''}" data-a="blocked">🚫</button>
+            <button class="baozi-btn-small" data-a="recommend">💌 推給${esc(friendName())}</button>
             ${cmd.url ? `<a class="baozi-btn-small" href="${esc(cmd.url)}" target="_blank" rel="noopener">💬 DC</a>` : ''}
+        </div>
+        <div class="baozi-lib-recbox" hidden>
+            <input type="text" class="baozi-search" maxlength="200" placeholder="想跟${esc(friendName())}說什麼？（可以不寫）">
+            <button class="baozi-btn-small baozi-on" data-a="recommend-send">送出</button>
         </div>`;
 }
 
@@ -287,6 +298,7 @@ export async function renderLibraryScreen(container, ui, opts = {}) {
     const pinBox = container.querySelector('#baozi-lib-pin');
     let items = [];
     let pinned = opts.pinned || null;
+    let pinLabel = opts.pinLabel || null;    // 不是骰子抽的（例如從通知點進來）就用這個標題、沒有「再抽一次」
     const isOpen = new Set();
 
     const all = () => (pinned ? [pinned, ...items] : items);
@@ -317,13 +329,14 @@ export async function renderLibraryScreen(container, ui, opts = {}) {
             case 'blocked': return '黑名單是空的';
             case 'hot': return '還沒有人標過玩過～';
             case 'today': return '今天的推薦都被拉黑了 🙈';
+            case 'recommended': return `${esc(friendName())}推給你的都玩過了～`;
             default: return '指令庫是空的';
         }
     }
 
     function drawPin() {
         if (!pinned) { pinBox.innerHTML = ''; return; }
-        pinBox.innerHTML = cardHtml(pinned, { open: true, pinned: '🎲 抽到這則！<button class="baozi-btn-small" data-a="reroll">再抽一次</button>' });
+        pinBox.innerHTML = cardHtml(pinned, { open: true, pinned: pinLabel || '🎲 抽到這則！<button class="baozi-btn-small" data-a="reroll">再抽一次</button>' });
         pinBox.querySelector('.baozi-lib-detail').innerHTML = detailHtml(pinned, view.character);
     }
 
@@ -331,7 +344,7 @@ export async function renderLibraryScreen(container, ui, opts = {}) {
         drawPin();
         const rest = pinned ? items.filter(c => c.id !== pinned.id) : items;
         if (!rest.length) {
-            list.innerHTML = `<div class="baozi-empty">${hint()}</div>`;
+            list.innerHTML = pinned ? '' : `<div class="baozi-empty">${hint()}</div>`;
             return;
         }
         list.innerHTML = rest.map(cmd => cardHtml(cmd, { open: isOpen.has(cmd.id) })).join('');
@@ -376,6 +389,23 @@ export async function renderLibraryScreen(container, ui, opts = {}) {
                     if (!fillChatInput(cmd.body)) { alert(t('找不到酒館的輸入框～先打開一個聊天')); break; }
                     lastPlayed = { id: cmd.id, title: cmd.title, body: cmd.body, at: Date.now() };
                     ui.closePanel?.();
+                    break;
+                }
+                case 'recommend': {
+                    const box = card.querySelector('.baozi-lib-recbox');
+                    box.hidden = !box.hidden;
+                    if (!box.hidden) box.querySelector('input').focus();
+                    break;
+                }
+                case 'recommend-send': {
+                    const input = card.querySelector('.baozi-lib-recbox input');
+                    const res = await botFetch(`/club/commands/${cmd.id}/recommend`, {
+                        method: 'POST', body: { note: input.value.trim() },
+                    });
+                    card.querySelector('.baozi-lib-recbox').hidden = true;
+                    input.value = '';
+                    const btn = card.querySelector('[data-a="recommend"]');
+                    btn.textContent = `✓ 推給${res.to}了`;
                     break;
                 }
                 case 'copy': {
@@ -427,6 +457,7 @@ export async function renderLibraryScreen(container, ui, opts = {}) {
         const res = await rollDice();
         if (!res.command) { alert(t(DICE_EMPTY)); drawPin(); return; }
         pinned = res.command;
+        pinLabel = null;
         draw();
         pinBox.scrollIntoView({ block: 'start' });
     }
@@ -476,6 +507,7 @@ const POOL_LABELS = [
     ['played', '玩過'],
     ['saved', '⭐ 喜歡'],
     ['today', '☀️ 今日推薦'],
+    ['recommended', '💌 力推'],
 ];
 
 /** 設定畫面裡的「🎲 骰子」那一塊。 */
@@ -498,16 +530,23 @@ export async function renderDiceSettings(box) {
         <button class="baozi-tag-chip baozi-toggle-chip ${prefs.random_by_character ? 'active' : ''}" id="baozi-dice-char">
             ${prefs.random_by_character ? '✓' : '○'} 玩過／沒玩過只看現在開著的角色
         </button>
+        <div class="baozi-setup-section-title" style="margin-top:16px;">🔔 通知</div>
+        <button class="baozi-tag-chip baozi-toggle-chip ${prefs.notify_discord ? 'active' : ''}" id="baozi-notify-dc">
+            ${prefs.notify_discord ? '✓' : '○'} 被力推時，大包子也在 Discord 私訊我
+        </button>
         <div class="baozi-setup-hint" id="baozi-dice-saved"></div>
     `;
     // 用按鈕當勾選框：tt 的主題會改寫原生 checkbox 的樣子（變成一條細線）
     const saved = box.querySelector('#baozi-dice-saved');
     box.addEventListener('click', async (ev) => {
-        const chip = ev.target.closest('[data-pool], #baozi-dice-char');
+        const chip = ev.target.closest('[data-pool], #baozi-dice-char, #baozi-notify-dc');
         if (!chip) return;
         chip.classList.toggle('active');
         if (chip.id === 'baozi-dice-char') {
             chip.textContent = (chip.classList.contains('active') ? '✓' : '○') + ' 玩過／沒玩過只看現在開著的角色';
+        }
+        if (chip.id === 'baozi-notify-dc') {
+            chip.textContent = (chip.classList.contains('active') ? '✓' : '○') + ' 被力推時，大包子也在 Discord 私訊我';
         }
         let pools = [...box.querySelectorAll('[data-pool].active')].map(i => i.dataset.pool);
         if (!pools.length) {
@@ -517,7 +556,11 @@ export async function renderDiceSettings(box) {
         try {
             await botFetch('/club/prefs', {
                 method: 'POST',
-                body: { random_pools: pools, random_by_character: box.querySelector('#baozi-dice-char').classList.contains('active') },
+                body: {
+                    random_pools: pools,
+                    random_by_character: box.querySelector('#baozi-dice-char').classList.contains('active'),
+                    notify_discord: box.querySelector('#baozi-notify-dc').classList.contains('active'),
+                },
             });
             saved.textContent = '✓ 存好了';
         } catch (e) {
@@ -697,4 +740,79 @@ export async function renderChatScreen(container, ui) {
         return;
     }
     connect();
+}
+
+
+// ============================================================
+// 🔔 通知（目前只有朋友力推）
+// ============================================================
+
+export async function fetchNotifications() {
+    return await botFetch('/club/notifications');
+}
+
+function timeAgo(iso) {
+    const s = (Date.now() - new Date(iso).getTime()) / 1000;
+    if (s < 60) return '剛剛';
+    if (s < 3600) return `${Math.floor(s / 60)} 分鐘前`;
+    if (s < 86400) return `${Math.floor(s / 3600)} 小時前`;
+    return `${Math.floor(s / 86400)} 天前`;
+}
+
+/**
+ * @param ui {back(), openCommand(cmd, label), onRead()}
+ */
+export async function renderNotificationsScreen(container, ui) {
+    container.innerHTML = `
+        <div class="baozi-screen">
+            <div class="baozi-screen-header">
+                <button class="baozi-back" id="baozi-back">← 回首頁</button>
+                <h3>🔔 通知</h3>
+            </div>
+            <div class="baozi-list" id="baozi-notif-list"><div class="baozi-loading">載入中...</div></div>
+        </div>
+    `;
+    container.querySelector('#baozi-back').addEventListener('click', ui.back);
+    const list = container.querySelector('#baozi-notif-list');
+    let data;
+    try {
+        data = await fetchNotifications();
+    } catch (e) {
+        list.innerHTML = `<div class="baozi-error">${esc(e.message)}</div>`;
+        return;
+    }
+    if (!data.items.length) {
+        list.innerHTML = '<div class="baozi-empty">還沒有通知～朋友推小劇場給你時會出現在這裡</div>';
+        return;
+    }
+    list.innerHTML = data.items.map(n => `
+        <div class="baozi-notif-item ${n.read ? '' : 'unread'}" data-id="${n.id}" data-prompt="${n.prompt_id}">
+            <span class="baozi-notif-icon">💌</span>
+            <div class="baozi-notif-body">
+                <div><b>${esc(n.from)}</b>推薦你來玩這個！《<span data-raw>${esc(n.title)}</span>》</div>
+                ${n.note ? `<div class="baozi-notif-text" data-raw>「${esc(n.note)}」</div>` : ''}
+                <div class="baozi-notif-time">${timeAgo(n.at)}</div>
+            </div>
+        </div>`).join('') + (data.unread
+        ? '<button class="baozi-btn-small baozi-btn-full" id="baozi-notif-all" style="margin-top:12px;">✓ 全部標為已讀</button>' : '');
+
+    list.addEventListener('click', async (ev) => {
+        if (ev.target.closest('#baozi-notif-all')) {
+            await botFetch('/club/notifications/read', { method: 'POST', body: {} });
+            ui.onRead?.();
+            renderNotificationsScreen(container, ui);
+            return;
+        }
+        const item = ev.target.closest('.baozi-notif-item');
+        if (!item) return;
+        try {
+            botFetch('/club/notifications/read', { method: 'POST', body: { ids: [Number(item.dataset.id)] } })
+                .then(() => ui.onRead?.()).catch(() => {});
+            const cmd = await botFetch('/club/commands/' + item.dataset.prompt);
+            const n = data.items.find(x => String(x.id) === item.dataset.id);
+            ui.openCommand(cmd, '🔔 從通知打開');
+        } catch (e) {
+            alert(t(e.message));
+        }
+    });
 }

@@ -12,6 +12,7 @@ import {
     bot, isBotLoggedIn, botLogout, refreshMe, renderBotLoginScreen,
     renderLibraryScreen, renderChatScreen, closeChat,
     rollDice, renderDiceSettings, DICE_EMPTY,
+    fetchNotifications, renderNotificationsScreen,
 } from './bot.js';
 import { localizeLive, refreshLocale, t } from './i18n.js';
 
@@ -874,6 +875,7 @@ function buildUI() {
         <div class="baozi-header" id="baozi-panel-header">
             <span class="baozi-logo">🥟 包子同好會</span>
             <span class="baozi-drag-hint">⋮⋮</span>
+            <span class="baozi-bell" id="baozi-bell" title="通知">🔔<span class="baozi-bell-dot" id="baozi-bell-dot" hidden></span></span>
             <span class="baozi-dice" id="baozi-dice" title="隨機抽一則">🎲</span>
             <span class="baozi-close" id="baozi-close">✕</span>
         </div>
@@ -894,6 +896,7 @@ function buildUI() {
     // 事件綁定
     panel.querySelector('#baozi-close').addEventListener('click', closePanel);
     panel.querySelector('#baozi-dice').addEventListener('click', (ev) => { ev.stopPropagation(); onDice(); });
+    panel.querySelector('#baozi-bell').addEventListener('click', (ev) => { ev.stopPropagation(); openNotifications(); });
     overlay.addEventListener('click', closePanel);
 }
 
@@ -1038,7 +1041,7 @@ function makePanelDraggable(panel) {
 
     const onDown = (e) => {
         // 避免點到關閉按鈕時觸發
-        if (e.target.closest('#baozi-close, #baozi-dice')) return;
+        if (e.target.closest('#baozi-close, #baozi-dice, #baozi-bell')) return;
 
         const point = e.touches ? e.touches[0] : e;
         startX = point.clientX;
@@ -1230,6 +1233,7 @@ function openPanel() {
     }
 
     renderMainContent();
+    checkNotifications();
 }
 
 
@@ -1461,6 +1465,42 @@ function renderHomeScreen(container) {
                 case 'settings': renderSettingsScreen(container); break;
             }
         });
+    });
+}
+
+
+// ---------- 🔔 通知（標題列上那顆 + 浮動按鈕的紅點） ----------
+const NOTIF_EVERY_MS = 2 * 60 * 1000;
+
+function setUnread(n) {
+    const dot = document.getElementById('baozi-bell-dot');
+    if (dot) { dot.hidden = !n; dot.textContent = n > 9 ? '9+' : String(n || ''); }
+    document.getElementById('baozi-float-btn')?.classList.toggle('baozi-has-notif', !!n);
+}
+
+async function checkNotifications() {
+    if (!isBotLoggedIn() || document.hidden) return;
+    try {
+        setUnread((await fetchNotifications()).unread);
+    } catch { /* 連不上就下次再看 */ }
+}
+
+function startNotifCheck() {
+    checkNotifications();
+    setInterval(checkNotifications, NOTIF_EVERY_MS);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) checkNotifications(); });
+}
+
+function openNotifications() {
+    const panel = document.getElementById('baozi-panel');
+    if (!panel.classList.contains('baozi-open')) openPanel();
+    if (!isBotLoggedIn()) return;
+    closeChat();
+    const body = document.getElementById('baozi-body');
+    renderNotificationsScreen(body, {
+        back: () => renderHomeScreen(body),
+        onRead: checkNotifications,
+        openCommand: (cmd, label) => openLibrary(body, { pinned: cmd, pinLabel: label }),
     });
 }
 
@@ -2771,5 +2811,6 @@ function makeModalDraggable(overlay) {
     } else {
         updateExtStatus('✨ 點按鈕，用大包子的登入碼登入', 'ok');
     }
+    startNotifCheck();
     console.log('[包子同好會] 啟動完成 🥟');
 })();

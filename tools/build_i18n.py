@@ -15,10 +15,13 @@ import re
 import opencc
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-SOURCES = [ROOT / "index.js", ROOT / "bot.js", ROOT / "shots.js",
+SOURCES = [ROOT / "index.js", ROOT / "bot.js", ROOT / "shots.js", ROOT / "desktop.js",
            ROOT.parent / "BIG-baozi" / "club" / "api.py",
            ROOT.parent / "BIG-baozi" / "club" / "chat.py",
-           ROOT.parent / "BIG-baozi" / "club" / "shots.py"]
+           ROOT.parent / "BIG-baozi" / "club" / "shots.py",
+           ROOT.parent / "BIG-baozi" / "club" / "desktop.py",
+           ROOT.parent / "BIG-baozi" / "routine" / "weather.py",
+           ROOT.parent / "BIG-baozi" / "lunar.py"]
 
 cc = opencc.OpenCC("t2s")
 text = "".join(p.read_text(encoding="utf-8") for p in SOURCES if p.exists())

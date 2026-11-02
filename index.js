@@ -16,6 +16,7 @@ import {
 } from './bot.js';
 import { localizeLive, refreshLocale, t } from './i18n.js';
 import { enterSelectMode, renderAlbumScreen } from './shots.js';
+import { renderDesktop } from './desktop.js';
 
 const extensionName = "baozi-club";
 const extensionFolderPath = `scripts/extensions/third-party/${extensionName}`;
@@ -883,6 +884,13 @@ function buildUI() {
         <div class="baozi-body" id="baozi-body">
             <div class="baozi-loading">正在蒸包子...</div>
         </div>
+        <nav class="baozi-tabbar" id="baozi-tabbar">
+            <button data-tab="home"><span>🏠</span>桌面</button>
+            <button data-tab="library"><span>📖</span>指令庫</button>
+            <button data-tab="chat"><span>💬</span>聊天</button>
+            <button data-tab="album"><span>🖼️</span>相簿</button>
+            <button data-tab="settings"><span>⚙️</span>設定</button>
+        </nav>
     `;
     document.body.appendChild(panel);
     localizeLive(panel);
@@ -896,6 +904,10 @@ function buildUI() {
 
     // 事件綁定
     panel.querySelector('#baozi-close').addEventListener('click', closePanel);
+    panel.querySelector('#baozi-tabbar').addEventListener('click', (ev) => {
+        const tab = ev.target.closest('[data-tab]')?.dataset.tab;
+        if (tab) go(tab);
+    });
     panel.querySelector('#baozi-dice').addEventListener('click', (ev) => { ev.stopPropagation(); onDice(); });
     panel.querySelector('#baozi-bell').addEventListener('click', (ev) => { ev.stopPropagation(); openNotifications(); });
     overlay.addEventListener('click', closePanel);
@@ -1282,6 +1294,7 @@ function closePanel() {
 async function renderMainContent() {
     const body = document.getElementById('baozi-body');
     closeChat();
+    setActiveTab('home');
     if (isBotLoggedIn()) {
         enterWithBot();
         renderHomeScreen(body);
@@ -1432,50 +1445,43 @@ function renderLoginScreen(container) {
 }
 
 
-function renderHomeScreen(container) {
-    container.innerHTML = `
-        <div class="baozi-home">
-            <div class="baozi-greeting">你好，<b>${escapeHtml(state.nickname)}</b>～今天也辛苦啦 💕</div>
-            <button class="baozi-today-card" data-target="today">
-                <span class="baozi-today-icon">☀️</span>
-                <span><b>今日推薦</b><br><small>跟 Discord 早上那 10 則同一份</small></span>
-            </button>
-            <div class="baozi-menu">
-                <button class="baozi-menu-btn" data-target="library">
-                    <span class="baozi-menu-icon">📖</span>
-                    <span>大包子指令庫</span>
-                </button>
-                <button class="baozi-menu-btn" data-target="shot">
-                    <span class="baozi-menu-icon">📸</span>
-                    <span>截圖／分享圖</span>
-                </button>
-                <button class="baozi-menu-btn" data-target="album">
-                    <span class="baozi-menu-icon">🖼️</span>
-                    <span>相簿</span>
-                </button>
-                <button class="baozi-menu-btn" data-target="chat">
-                    <span class="baozi-menu-icon">💬</span>
-                    <span>聊天</span>
-                </button>
-                <button class="baozi-menu-btn" data-target="settings">
-                    <span class="baozi-menu-icon">⚙️</span>
-                    <span>設定</span>
-                </button>
-            </div>
-        </div>
-    `;
+// ---------- 分頁列 + 桌面 ----------
+function setActiveTab(tab) {
+    document.querySelectorAll('#baozi-tabbar [data-tab]').forEach(b =>
+        b.classList.toggle('on', b.dataset.tab === tab));
+    const bar = document.getElementById('baozi-tabbar');
+    if (bar) bar.hidden = !isBotLoggedIn();
+}
 
-    container.querySelectorAll('.baozi-menu-btn, .baozi-today-card').forEach(btn => {
-        btn.addEventListener('click', () => {
-            switch (btn.dataset.target) {
-                case 'today': openLibrary(container, { filter: 'today' }); break;
-                case 'library': openLibrary(container, { filter: 'all' }); break;
-                case 'chat': renderChatScreen(container, { back: () => renderHomeScreen(container) }); break;
-                case 'shot': closePanel(); enterSelectMode(); break;
-                case 'album': renderAlbumScreen(container, { back: () => renderHomeScreen(container), closePanel }); break;
-                case 'settings': renderSettingsScreen(container); break;
-            }
-        });
+/** 分頁列和桌面上的捷徑都走這裡。 */
+function go(tab, opts = {}) {
+    const body = document.getElementById('baozi-body');
+    if (!isBotLoggedIn()) { renderMainContent(); return; }
+    closeChat();
+    body.scrollTop = 0;
+    switch (tab) {
+        case 'home': renderHomeScreen(body); break;
+        case 'library': openLibrary(body, { filter: 'all', ...opts }); break;
+        case 'chat':
+            setActiveTab('chat');
+            renderChatScreen(body, { back: () => renderHomeScreen(body) });
+            break;
+        case 'album':
+            setActiveTab('album');
+            renderAlbumScreen(body, { back: () => renderHomeScreen(body), closePanel });
+            break;
+        case 'settings': setActiveTab('settings'); renderSettingsScreen(body); break;
+    }
+}
+
+function renderHomeScreen(container) {
+    setActiveTab('home');
+    renderDesktop(container, {
+        go,
+        openCommand: (cmd) => openLibrary(container, { pinned: cmd, pinLabel: cmd.rec ? '💌 力推' : '☀️ 今日推薦' }),
+        dice: onDice,
+        shot: () => { closePanel(); enterSelectMode(); },
+        notifications: openNotifications,
     });
 }
 
@@ -1503,6 +1509,7 @@ function startNotifCheck() {
 }
 
 function openNotifications() {
+    setActiveTab('');
     const panel = document.getElementById('baozi-panel');
     if (!panel.classList.contains('baozi-open')) openPanel();
     if (!isBotLoggedIn()) return;
@@ -1535,6 +1542,7 @@ async function onDice() {
 
 // ---------- 大包子指令庫 ----------
 function openLibrary(container, opts = {}) {
+    setActiveTab('library');
     const show = () => renderLibraryScreen(container, {
         back: () => renderHomeScreen(container),
         copy: copyToClipboard,

@@ -2045,3 +2045,12 @@ body.baozi-selecting #chat .baozi-sel-copy { cursor: pointer; }
 .baozi-tpl-chips::-webkit-scrollbar { display: none; }
 .baozi-tpl-chips .baozi-tag-chip { flex-shrink: 0; white-space: nowrap; }
 .baozi-shot-preview img { transition: opacity .2s; }
+
+/* ---------- ✨ 排版模型設定 ---------- */
+.baozi-ai-list { display: flex; flex-direction: column; gap: 6px; margin: 8px 0; }
+.baozi-ai-item { display: flex; align-items: center; gap: 6px; background: #fff; border-radius: 12px; padding: 8px 10px; border: 1.5px solid transparent; }
+.baozi-ai-item.on { border-color: var(--baozi-peach); }
+.baozi-ai-main { flex: 1; min-width: 0; cursor: pointer; }
+.baozi-ai-sub { font-size: 11px; color: var(--baozi-brown-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.baozi-ai-form { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.baozi-ai-form[hidden] { display: none; }

@@ -17,6 +17,7 @@ import {
 import { localizeLive, refreshLocale, t } from './i18n.js';
 import { enterSelectMode, renderAlbumScreen } from './shots.js';
 import { renderDesktop } from './desktop.js';
+import { renderAiSettings } from './aidesign.js';
 
 const extensionName = "baozi-club";
 const extensionFolderPath = `scripts/extensions/third-party/${extensionName}`;
@@ -2378,6 +2379,9 @@ function renderSettingsScreen(container) {
                 <div class="baozi-setup-section-title">🎲 骰子</div>
                 <div id="baozi-dice-settings"></div>
                 <hr style="margin: 18px 0; border-color: rgba(0,0,0,0.1);">
+                <div class="baozi-setup-section-title">✨ 排版模型（自訂 API）</div>
+                <div id="baozi-ai-settings"></div>
+                <hr style="margin: 18px 0; border-color: rgba(0,0,0,0.1);">
                 <div class="baozi-setup-hint" style="margin-top:10px;">
                     舊的指令要搬過來：到 Discord 打 <b>/club 搬家</b>，大包子會自己去舊的 Firebase 讀，先給你看預覽。
                 </div>
@@ -2388,6 +2392,7 @@ function renderSettingsScreen(container) {
 
     document.getElementById('baozi-back').addEventListener('click', () => renderHomeScreen(container));
     renderDiceSettings(document.getElementById('baozi-dice-settings'));
+    renderAiSettings(document.getElementById('baozi-ai-settings'));
     document.getElementById('baozi-bot-logout').addEventListener('click', () => {
         if (confirm(t('登出？之後要到 Discord 打 /club 登入 重新拿碼。'))) {
             botLogout();

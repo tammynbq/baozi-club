@@ -10,7 +10,7 @@
 
 import {
     bot, isBotLoggedIn, botLogout, refreshMe, renderBotLoginScreen,
-    renderLibraryScreen, migrateCommands,
+    renderLibraryScreen,
 } from './bot.js';
 
 const extensionName = "baozi-club";
@@ -813,35 +813,16 @@ async function touchLastSeen() {
 }
 
 
-const FIREBASE_DOWN = '舊功能（吐槽、分享對話、成員牆…）在 Firebase 上，現在連不上。大包子指令庫照常能用～';
-
-/** Firebase 的匿名登入失敗過（state.db 有了、state.user 沒有）就再試一次。 */
-async function retryFirebase() {
-    if (state.user) return true;
-    return await initFirebase({ quiet: true });
-}
-
-
 // ============================================================
 // 🍞 用大包子的帳號進來
 // ============================================================
 // 不用暗號，暱稱就是大包子認得的名字（米米／一帆）。
-// 成員牆、吐槽這些舊功能還在 Firebase 上，所以一樣登記一下成員。
-async function enterWithBot() {
+// 1.7.0 起完全不連 Firebase：舊指令用 Discord 的 /club 搬家 搬過來，
+// 吐槽、分享對話、成員牆之後在大包子上重做（Firebase 上的舊資料沒刪）。
+function enterWithBot() {
     const name = bot.me?.name || '包子';
-    // 不等它寫完：Firestore 連不上時 setDoc 會一直掛著，不能讓整個 club 卡在這裡
-    (async () => {
-        if (!state.db || !state.user) return;
-        const { doc, setDoc, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
-        await setDoc(doc(state.db, 'members', state.user.uid), {
-            nickname: name,
-            lastSeen: serverTimestamp(),
-        }, { merge: true });
-    })().catch(err => console.warn('[包子同好會] 成員牆登記失敗（不影響大包子的功能）', err));
     state.nickname = name;
     state.isReady = true;
-    localStorage.setItem('baozi_nickname', name);
-    localStorage.setItem('baozi_verified', 'yes');
     updateExtStatus('✅ 已用大包子登入：' + name, 'ok');
 }
 
@@ -1287,51 +1268,14 @@ function closePanel() {
 
 async function renderMainContent() {
     const body = document.getElementById('baozi-body');
-
-    // 如果還沒設定 Firebase → 顯示設定畫面（有內建設定時不會走到這）
-    if (!isConfigured()) {
-        renderSetupScreen(body);
+    if (isBotLoggedIn()) {
+        enterWithBot();
+        renderHomeScreen(body);
         return;
     }
-
-    // 如果還沒連上 Firebase → 提示連線中
-    if (!state.db) {
-        body.innerHTML = '<div class="baozi-loading">🥟 正在連線 Firebase...</div>';
-        const ok = await initFirebase({ quiet: isBotLoggedIn() });
-        // 用大包子登入的話，Firebase 連不上也照樣進來（指令庫在大包子那邊）
-        if (!ok && isBotLoggedIn()) {
-            await enterWithBot();
-            renderHomeScreen(body);
-            return;
-        }
-        if (!ok) {
-            body.innerHTML = '<div class="baozi-error">連線失敗，請檢查設定是否正確。<br><br><button class="baozi-btn-primary" id="baozi-reset-config">重新設定</button></div>';
-            document.getElementById('baozi-reset-config')?.addEventListener('click', () => {
-                if (confirm('確定要清除設定重新填寫嗎？')) {
-                    localStorage.removeItem('baozi_firebase_config');
-                    localStorage.removeItem('baozi_club_secret');
-                    FIREBASE_CONFIG = null;
-                    CLUB_SECRET = null;
-                    renderSetupScreen(body);
-                }
-            });
-            return;
-        }
-    }
-
-    if (!state.isReady) {
-        if (isBotLoggedIn()) {
-            await enterWithBot();
-            renderHomeScreen(body);
-            return;
-        }
-        renderBotLoginScreen(body, {
-            onDone: async () => { await enterWithBot(); renderHomeScreen(body); },
-            onLegacy: () => renderLoginScreen(body),
-        });
-    } else {
-        renderHomeScreen(body);
-    }
+    renderBotLoginScreen(body, {
+        onDone: () => { enterWithBot(); renderHomeScreen(body); },
+    });
 }
 
 
@@ -1483,30 +1427,6 @@ function renderHomeScreen(container) {
                     <span class="baozi-menu-icon">📖</span>
                     <span>大包子指令庫</span>
                 </button>
-                <button class="baozi-menu-btn" data-target="notifications">
-                    <span class="baozi-menu-icon">🔔</span>
-                    <span>通知中心</span>
-                </button>
-                <button class="baozi-menu-btn" data-target="my-commands">
-                    <span class="baozi-menu-icon">📚</span>
-                    <span>我的指令庫</span>
-                </button>
-                <button class="baozi-menu-btn" data-target="shared-space">
-                    <span class="baozi-menu-icon">🏠</span>
-                    <span>共享空間</span>
-                </button>
-                <button class="baozi-menu-btn" data-target="shared-chats">
-                    <span class="baozi-menu-icon">💬</span>
-                    <span>分享的對話</span>
-                </button>
-                <button class="baozi-menu-btn" data-target="members">
-                    <span class="baozi-menu-icon">👥</span>
-                    <span>成員牆</span>
-                </button>
-                <button class="baozi-menu-btn" data-target="random">
-                    <span class="baozi-menu-icon">🎲</span>
-                    <span>隨機抽指令</span>
-                </button>
                 <button class="baozi-menu-btn" data-target="settings">
                     <span class="baozi-menu-icon">⚙️</span>
                     <span>設定</span>
@@ -1517,27 +1437,12 @@ function renderHomeScreen(container) {
 
     container.querySelectorAll('.baozi-menu-btn').forEach(btn => {
         btn.addEventListener('click', () => {
-            const target = btn.dataset.target;
-            // 大包子指令庫和設定不靠 Firebase；其他舊功能還在 Firebase 上
-            if (!state.user && target !== 'library' && target !== 'settings') {
-                retryFirebase().then(ok => ok ? btn.click() : alert(FIREBASE_DOWN));
-                return;
-            }
-            switch (target) {
+            switch (btn.dataset.target) {
                 case 'library': openLibrary(container); break;
-                case 'notifications': renderNotificationCenter(container); break;
-                case 'my-commands': renderMyCommandsScreen(container); break;
-                case 'shared-space': renderSharedSpaceScreen(container); break;
-                case 'shared-chats': renderSharedChatsScreen(container); break;
-                case 'members': renderMembersScreen(container); break;
-                case 'random': doRandomPick(); break;
                 case 'settings': renderSettingsScreen(container); break;
             }
         });
     });
-
-    // 更新選單上的紅點
-    updateMenuBadges();
 }
 
 
@@ -1554,23 +1459,6 @@ function openLibrary(container) {
     } else {
         renderBotLoginScreen(container, { onDone: show });
     }
-}
-
-
-/**
- * 從 Firebase 搬家：共享空間的指令 + 自己的（包括沒分享的）。
- * 朋友沒分享的不搬 —— 那是她私人的，讓她在自己手機上搬。
- */
-async function migrateFromFirebase() {
-    if (!state.user && !(await retryFirebase())) throw new Error(FIREBASE_DOWN);
-    const { collection, getDocs } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
-    const snapshot = await getDocs(collection(state.db, 'commands'));
-    const commands = snapshot.docs
-        .map(d => d.data())
-        .filter(c => c.shared || c.ownerId === state.user.uid);
-    // 舊的在前，搬進去的編號順序跟原本存的先後一樣
-    commands.sort((a, b) => (a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0));
-    return { found: commands.length, ...(await migrateCommands(commands)) };
 }
 
 
@@ -2386,92 +2274,25 @@ function renderSettingsScreen(container) {
                 <h3>⚙️ 設定</h3>
             </div>
             <div class="baozi-form">
-                <label>你的暱稱</label>
-                <input type="text" id="baozi-edit-nickname" value="${escapeHtml(state.nickname || '')}">
-                <button class="baozi-btn-primary" id="baozi-save-nickname">儲存暱稱</button>
-                <hr style="margin: 20px 0; border-color: rgba(0,0,0,0.1);">
-                <div class="baozi-info">
-                    <div><b>暱稱：</b>${escapeHtml(state.nickname)}</div>
-                    <div><b>使用者 ID：</b><span style="font-size:11px; opacity:.6;">${state.user ? state.user.uid : '（Firebase 沒連上）'}</span></div>
-                </div>
-                <hr style="margin: 20px 0; border-color: rgba(0,0,0,0.1);">
                 <div class="baozi-setup-section-title">🍞 大包子</div>
-                ${isBotLoggedIn()
-                    ? `<div class="baozi-info">
-                           <div><b>已登入：</b>${escapeHtml(bot.me.name)}</div>
-                           <div style="font-size:11px; opacity:.6; word-break:break-all;">${escapeHtml(bot.url)}</div>
-                       </div>
-                       <button class="baozi-btn-small baozi-btn-full" id="baozi-migrate" style="margin-top:10px;">📦 把 Firebase 的指令搬進大包子</button>
-                       <div class="baozi-setup-hint" id="baozi-migrate-result">搬共享空間的 + 你自己的（沒分享的也會搬）。已經有的會跳過，按幾次都不會重複。</div>
-                       <button class="baozi-btn-small baozi-btn-full" id="baozi-bot-logout" style="margin-top:10px;">登出大包子</button>`
-                    : `<button class="baozi-btn-small baozi-btn-full" id="baozi-bot-login-open">用大包子登入</button>`}
-                <hr style="margin: 20px 0; border-color: rgba(0,0,0,0.1);">
-                ${BUILTIN_FIREBASE_CONFIG ? '' : '<button class="baozi-btn-small baozi-btn-full" id="baozi-reset-all" style="margin-bottom:10px;">🔧 重新設定 Firebase / 暗號</button>'}
-                <button class="baozi-btn-danger baozi-btn-full" id="baozi-logout">登出</button>
+                <div class="baozi-info">
+                    <div><b>已登入：</b>${escapeHtml(bot.me?.name || '')}</div>
+                    <div style="font-size:11px; opacity:.6; word-break:break-all;">${escapeHtml(bot.url)}</div>
+                </div>
+                <div class="baozi-setup-hint" style="margin-top:10px;">
+                    舊的指令要搬過來：到 Discord 打 <b>/club 搬家</b>，大包子會自己去舊的 Firebase 讀，先給你看預覽。
+                </div>
+                <button class="baozi-btn-danger baozi-btn-full" id="baozi-bot-logout" style="margin-top:16px;">登出</button>
             </div>
         </div>
     `;
 
     document.getElementById('baozi-back').addEventListener('click', () => renderHomeScreen(container));
-
-    document.getElementById('baozi-save-nickname').addEventListener('click', async () => {
-        const newName = document.getElementById('baozi-edit-nickname').value.trim();
-        if (!newName) return;
-        if (!state.user) { alert(FIREBASE_DOWN); return; }
-        state.nickname = newName;
-        localStorage.setItem('baozi_nickname', newName);
-
-        const { doc, updateDoc } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
-        await updateDoc(doc(state.db, 'members', state.user.uid), { nickname: newName });
-        alert('暱稱已更新～');
-        renderHomeScreen(container);
-    });
-
-    document.getElementById('baozi-migrate')?.addEventListener('click', async (ev) => {
-        const btn = ev.currentTarget;
-        const out = document.getElementById('baozi-migrate-result');
-        btn.disabled = true;
-        out.textContent = '搬家中...';
-        try {
-            const r = await migrateFromFirebase();
-            out.textContent = `✅ 找到 ${r.found} 則：搬了 ${r.added} 則，${r.skipped} 則大包子本來就有。Discord 論壇會慢慢冒出新貼文。`;
-        } catch (err) {
-            out.textContent = '❌ ' + err.message;
-        } finally {
-            btn.disabled = false;
-        }
-    });
-
-    document.getElementById('baozi-bot-logout')?.addEventListener('click', () => {
-        if (confirm('登出大包子？之後要到 Discord 重新拿登入碼。')) {
+    document.getElementById('baozi-bot-logout').addEventListener('click', () => {
+        if (confirm('登出？之後要到 Discord 打 /club 登入 重新拿碼。')) {
             botLogout();
-            renderSettingsScreen(container);
-        }
-    });
-
-    document.getElementById('baozi-bot-login-open')?.addEventListener('click', () => {
-        renderBotLoginScreen(container, { onDone: () => renderSettingsScreen(container) });
-    });
-
-    document.getElementById('baozi-reset-all')?.addEventListener('click', () => {
-        if (confirm('確定要重新設定嗎？\n\n這會清除 Firebase 設定和暗號，需要重新填寫。\n（你的暱稱、指令、分享內容都還會保留在雲端～）')) {
-            localStorage.removeItem('baozi_firebase_config');
-            localStorage.removeItem('baozi_club_secret');
-            localStorage.removeItem('baozi_verified');
-            FIREBASE_CONFIG = null;
-            CLUB_SECRET = null;
             state.isReady = false;
-            renderSetupScreen(container);
-        }
-    });
-
-    document.getElementById('baozi-logout').addEventListener('click', () => {
-        if (confirm('確定要登出嗎？下次要重新輸入暗號。')) {
-            localStorage.removeItem('baozi_verified');
-            localStorage.removeItem('baozi_nickname');
-            state.isReady = false;
-            state.nickname = null;
-            renderLoginScreen(container);
+            renderMainContent();
         }
     });
 }
@@ -2902,49 +2723,12 @@ function makeModalDraggable(overlay) {
     // 等待 SillyTavern UI 載入（給 2 秒緩衝）
     await new Promise(r => setTimeout(r, 2000));
 
-    // 建立 UI
     buildUI();
 
-    // 嘗試從 localStorage 載入設定
-    const hasConfig = loadConfig();
-
-    if (!hasConfig) {
-        updateExtStatus('⚠️ 尚未設定，請點按鈕進行首次設定', 'error');
-        console.log('[包子同好會] 尚未設定，等待使用者填寫');
-        return;
-    }
-
-    updateExtStatus('⏳ 連線 Firebase 中...');
-
-    // 初始化 Firebase
-    const ok = await initFirebase();
-    if (!ok) {
-        updateExtStatus('❌ Firebase 連線失敗', 'error');
-        return;
-    }
-
-    // 如果本地有記錄的驗證狀態，嘗試自動恢復
-    const savedNick = localStorage.getItem('baozi_nickname');
-    const savedVerified = localStorage.getItem('baozi_verified');
     if (isBotLoggedIn()) {
-        await enterWithBot();
-        touchLastSeen();
-        console.log('[包子同好會] 用大包子的帳號自動登入');
-    } else if (savedVerified === 'yes' && savedNick) {
-        state.nickname = savedNick;
-        state.isReady = true;
-        updateExtStatus('✅ 已登入：' + savedNick, 'ok');
-        console.log('[包子同好會] 自動恢復登入');
-        touchLastSeen();  // 更新成員牆的上線時間
+        enterWithBot();
     } else {
-        updateExtStatus('✨ 已連線，請點擊按鈕登入', 'ok');
+        updateExtStatus('✨ 點按鈕，用大包子的登入碼登入', 'ok');
     }
-
     console.log('[包子同好會] 啟動完成 🥟');
-
-    // 開始定期檢查通知
-    startNotificationPolling();
-
-    // 開始自動刷新目前的清單（有新內容時靜默更新）
-    startAutoRefresh();
 })();

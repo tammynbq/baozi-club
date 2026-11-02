@@ -4,7 +4,7 @@
 // 指令庫和標記跟 Discord 上的大包子共用同一份：
 //   - 登入：Discord 上打 /club 登入 拿碼，在這裡輸入，換一把這支手機專用的鑰匙
 //   - 指令庫：篩選（全部／沒玩過／玩過／喜歡／熱門／黑名單）、收藏、拉黑、記「跟誰玩過」
-//   - 搬家：把 Firebase 裡的指令搬進大包子
+//   - 舊指令：Discord 的 /club 搬家（大包子自己去 Firebase 讀）
 //
 // 鑰匙存在這支手機的 localStorage；大包子那邊只存它的指紋。
 // ============================================================
@@ -367,26 +367,4 @@ export async function renderLibraryScreen(container, ui) {
     });
 
     load();
-}
-
-
-// ============================================================
-// 從 Firebase 搬家
-// ============================================================
-
-/**
- * @param commands Firebase 裡讀出來的指令（{title, content, tags, ownerNickname}）
- * @returns {added, skipped}
- */
-export async function migrateCommands(commands) {
-    const payload = commands
-        .filter(c => (c.content || '').trim())
-        .map(c => ({
-            title: c.title || '',
-            content: c.content,
-            tags: c.tags || [],
-            owner: c.ownerNickname || '',
-        }));
-    if (!payload.length) return { added: 0, skipped: 0 };
-    return await botFetch('/club/import', { method: 'POST', body: { commands: payload } });
 }

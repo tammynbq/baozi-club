@@ -125,7 +125,7 @@ const state = {
 // 🔥 Firebase 初始化與登入
 // ============================================================
 
-async function initFirebase() {
+async function initFirebase({ quiet = false } = {}) {
     try {
         // 從 CDN 載入 Firebase SDK（使用 ES 模組）
         const { initializeApp, getApps, getApp } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js');
@@ -146,7 +146,7 @@ async function initFirebase() {
         return true;
     } catch (err) {
         console.error('[包子同好會] Firebase 初始化失敗', err);
-        showError('連線失敗：' + err.message);
+        if (!quiet) showError('連線失敗：' + err.message);
         return false;
     }
 }
@@ -813,6 +813,15 @@ async function touchLastSeen() {
 }
 
 
+const FIREBASE_DOWN = '舊功能（吐槽、分享對話、成員牆…）在 Firebase 上，現在連不上。大包子指令庫照常能用～';
+
+/** Firebase 的匿名登入失敗過（state.db 有了、state.user 沒有）就再試一次。 */
+async function retryFirebase() {
+    if (state.user) return true;
+    return await initFirebase({ quiet: true });
+}
+
+
 // ============================================================
 // 🍞 用大包子的帳號進來
 // ============================================================
@@ -820,15 +829,15 @@ async function touchLastSeen() {
 // 成員牆、吐槽這些舊功能還在 Firebase 上，所以一樣登記一下成員。
 async function enterWithBot() {
     const name = bot.me?.name || '包子';
-    try {
+    // 不等它寫完：Firestore 連不上時 setDoc 會一直掛著，不能讓整個 club 卡在這裡
+    (async () => {
+        if (!state.db || !state.user) return;
         const { doc, setDoc, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
         await setDoc(doc(state.db, 'members', state.user.uid), {
             nickname: name,
             lastSeen: serverTimestamp(),
         }, { merge: true });
-    } catch (err) {
-        console.warn('[包子同好會] 成員牆登記失敗（不影響大包子的功能）', err);
-    }
+    })().catch(err => console.warn('[包子同好會] 成員牆登記失敗（不影響大包子的功能）', err));
     state.nickname = name;
     state.isReady = true;
     localStorage.setItem('baozi_nickname', name);
@@ -1288,7 +1297,13 @@ async function renderMainContent() {
     // 如果還沒連上 Firebase → 提示連線中
     if (!state.db) {
         body.innerHTML = '<div class="baozi-loading">🥟 正在連線 Firebase...</div>';
-        const ok = await initFirebase();
+        const ok = await initFirebase({ quiet: isBotLoggedIn() });
+        // 用大包子登入的話，Firebase 連不上也照樣進來（指令庫在大包子那邊）
+        if (!ok && isBotLoggedIn()) {
+            await enterWithBot();
+            renderHomeScreen(body);
+            return;
+        }
         if (!ok) {
             body.innerHTML = '<div class="baozi-error">連線失敗，請檢查設定是否正確。<br><br><button class="baozi-btn-primary" id="baozi-reset-config">重新設定</button></div>';
             document.getElementById('baozi-reset-config')?.addEventListener('click', () => {
@@ -1503,6 +1518,11 @@ function renderHomeScreen(container) {
     container.querySelectorAll('.baozi-menu-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             const target = btn.dataset.target;
+            // 大包子指令庫和設定不靠 Firebase；其他舊功能還在 Firebase 上
+            if (!state.user && target !== 'library' && target !== 'settings') {
+                retryFirebase().then(ok => ok ? btn.click() : alert(FIREBASE_DOWN));
+                return;
+            }
             switch (target) {
                 case 'library': openLibrary(container); break;
                 case 'notifications': renderNotificationCenter(container); break;
@@ -1542,6 +1562,7 @@ function openLibrary(container) {
  * 朋友沒分享的不搬 —— 那是她私人的，讓她在自己手機上搬。
  */
 async function migrateFromFirebase() {
+    if (!state.user && !(await retryFirebase())) throw new Error(FIREBASE_DOWN);
     const { collection, getDocs } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
     const snapshot = await getDocs(collection(state.db, 'commands'));
     const commands = snapshot.docs
@@ -2371,7 +2392,7 @@ function renderSettingsScreen(container) {
                 <hr style="margin: 20px 0; border-color: rgba(0,0,0,0.1);">
                 <div class="baozi-info">
                     <div><b>暱稱：</b>${escapeHtml(state.nickname)}</div>
-                    <div><b>使用者 ID：</b><span style="font-size:11px; opacity:.6;">${state.user.uid}</span></div>
+                    <div><b>使用者 ID：</b><span style="font-size:11px; opacity:.6;">${state.user ? state.user.uid : '（Firebase 沒連上）'}</span></div>
                 </div>
                 <hr style="margin: 20px 0; border-color: rgba(0,0,0,0.1);">
                 <div class="baozi-setup-section-title">🍞 大包子</div>
@@ -2396,6 +2417,7 @@ function renderSettingsScreen(container) {
     document.getElementById('baozi-save-nickname').addEventListener('click', async () => {
         const newName = document.getElementById('baozi-edit-nickname').value.trim();
         if (!newName) return;
+        if (!state.user) { alert(FIREBASE_DOWN); return; }
         state.nickname = newName;
         localStorage.setItem('baozi_nickname', newName);
 

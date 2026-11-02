@@ -10,7 +10,7 @@
 
 import {
     bot, isBotLoggedIn, botLogout, refreshMe, renderBotLoginScreen,
-    renderLibraryScreen,
+    renderLibraryScreen, renderChatScreen, closeChat,
 } from './bot.js';
 
 const extensionName = "baozi-club";
@@ -1268,6 +1268,7 @@ function closePanel() {
 
 async function renderMainContent() {
     const body = document.getElementById('baozi-body');
+    closeChat();
     if (isBotLoggedIn()) {
         enterWithBot();
         renderHomeScreen(body);
@@ -1427,6 +1428,10 @@ function renderHomeScreen(container) {
                     <span class="baozi-menu-icon">📖</span>
                     <span>大包子指令庫</span>
                 </button>
+                <button class="baozi-menu-btn" data-target="chat">
+                    <span class="baozi-menu-icon">💬</span>
+                    <span>聊天</span>
+                </button>
                 <button class="baozi-menu-btn" data-target="settings">
                     <span class="baozi-menu-icon">⚙️</span>
                     <span>設定</span>
@@ -1439,6 +1444,7 @@ function renderHomeScreen(container) {
         btn.addEventListener('click', () => {
             switch (btn.dataset.target) {
                 case 'library': openLibrary(container); break;
+                case 'chat': renderChatScreen(container, { back: () => renderHomeScreen(container) }); break;
                 case 'settings': renderSettingsScreen(container); break;
             }
         });

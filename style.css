@@ -1433,3 +1433,112 @@ a.baozi-btn-small {
     display: inline-flex;
     align-items: center;
 }
+
+/* ---------- 💬 聊天室 ---------- */
+.baozi-chat {
+    display: flex;
+    flex-direction: column;
+}
+
+.baozi-chat-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-left: auto;
+    background: #ccc;
+}
+.baozi-chat-dot[data-state="on"] { background: #5cc08a; }
+.baozi-chat-dot[data-state="connecting"] { background: var(--baozi-yellow); }
+.baozi-chat-dot[data-state="off"] { background: var(--baozi-peach); }
+
+.baozi-chat-list {
+    height: min(52vh, 440px);
+    overflow-y: auto;
+    padding: 4px 2px;
+    -webkit-overflow-scrolling: touch;
+}
+
+.baozi-chat-msg {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 10px;
+    align-items: flex-start;
+}
+.baozi-chat-msg.mine { flex-direction: row-reverse; }
+
+.baozi-chat-avatar {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    object-fit: cover;
+    background: var(--baozi-cream-dark);
+}
+
+.baozi-chat-main {
+    max-width: 78%;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+}
+.baozi-chat-msg.mine .baozi-chat-main { align-items: flex-end; }
+
+.baozi-chat-meta {
+    font-size: 11px;
+    color: var(--baozi-brown-soft);
+    margin-bottom: 2px;
+}
+.baozi-chat-meta span { opacity: .7; }
+
+.baozi-chat-bubble {
+    background: white;
+    color: var(--baozi-brown);
+    padding: 7px 11px;
+    border-radius: 14px 14px 14px 4px;
+    font-size: 14px;
+    line-height: 1.5;
+    word-break: break-word;
+    box-shadow: 0 1px 4px var(--baozi-shadow);
+}
+.baozi-chat-msg.mine .baozi-chat-bubble {
+    background: var(--baozi-peach-light);
+    border-radius: 14px 14px 4px 14px;
+}
+
+.baozi-chat-img {
+    max-width: 100%;
+    max-height: 220px;
+    border-radius: 10px;
+    margin-top: 4px;
+}
+
+.baozi-chat-file {
+    font-size: 12px;
+    margin-top: 4px;
+    color: var(--baozi-brown);
+}
+
+.baozi-chat-input {
+    display: flex;
+    gap: 6px;
+    align-items: flex-end;
+    padding-top: 8px;
+    border-top: 1px dashed var(--baozi-cream-dark);
+}
+.baozi-chat-input textarea {
+    flex: 1;
+    min-width: 0;
+    resize: none;
+    padding: 8px 10px;
+    border-radius: 12px;
+    border: 1.5px solid var(--baozi-cream-dark);
+    font-family: inherit;
+    font-size: 14px;
+    background: white;
+    color: var(--baozi-brown);
+}
+.baozi-chat-input .baozi-btn-primary {
+    width: auto;
+    margin: 0;
+    padding: 8px 14px;
+}

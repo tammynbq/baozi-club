@@ -28,14 +28,49 @@ function esc(str) {
 
 let selecting = false;
 let bar = null;
-const originals = new Map();     // .mes_text → 原本的 innerHTML
+// 原本的那一樓完全不動：只是先藏起來，旁邊放一份 club 自己的「選取用副本」。
+// 以前是直接改寫那一樓再整段蓋回去 —— 智繪姬之類插件的摺疊框會被切碎、
+// 自己再補畫一個（變成兩條），整段蓋回去也會讓它們的按鈕失效。
+const hidden = [];               // [原本的 .mes_text, 它原本的 style.display]
 
 const END_RE = /([。！？!?]+|…+|⋯+)([」』”’）)\]】》]*)/g;
 const BLOCK_TAGS = new Set(['P', 'DIV', 'LI', 'BLOCKQUOTE', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'PRE', 'TR']);
 
-function messageImages(mes) {
-    return [...mes.querySelectorAll('.mes_img, .mes_img_container img, .mes_text img')]
-        .filter(img => img.naturalWidth > 0 || img.complete);
+const IMG_URL_RE = /\.(png|jpe?g|webp|gif|avif)(\?|#|$)|^data:image\/|\/user\/images\//i;
+
+function imgSrcOf(img) {
+    return img.currentSrc || img.getAttribute('src') || img.dataset.src
+        || img.dataset.original || img.getAttribute('data-lazy-src') || '';
+}
+
+/** 這一樓的圖（不管有沒有被摺疊起來）。頭像、小圖示不算。 */
+function messageImageSrcs(mes) {
+    const out = [];
+    for (const img of mes.querySelectorAll('img')) {
+        if (img.closest('.avatar, .baozi-sel-copy, .mes_buttons, .swipe_left, .swipe_right')) continue;
+        const src = imgSrcOf(img);
+        if (!src || out.includes(src)) continue;
+        // 已經載好、但很小的（表情、圖示）不算；還沒載的（摺疊裡的）看網址像不像圖
+        if (img.naturalWidth && img.naturalWidth < 64) continue;
+        if (!img.naturalWidth && !IMG_URL_RE.test(src)) continue;
+        out.push(src.startsWith('http') || src.startsWith('data:') ? src : new URL(src, location.href).href);
+    }
+    return out;
+}
+
+/** 做「選取用副本」：複製那一樓的文字，拿掉圖片和插件的按鈕、摺疊框之類的東西。 */
+function makeCopy(textEl) {
+    const copy = textEl.cloneNode(true);
+    copy.removeAttribute('id');
+    copy.className = 'mes_text baozi-sel-copy';
+    copy.querySelectorAll('img, picture, video, audio, svg, canvas, iframe, button, script, style, '
+        + 'summary, [role="button"], [onclick], input, textarea, select').forEach(el => el.remove());
+    // 插件的摺疊框、標籤：拿掉圖片之後沒剩幾個字的，多半就是它們
+    copy.querySelectorAll('[class*="fold"], [class*="collapse"], [class*="toggle"], [class*="expand"], '
+        + '[class*="badge"], [class*="tag"]').forEach(el => {
+        if ((el.textContent || '').trim().length <= 20) el.remove();
+    });
+    return copy;
 }
 
 /** 把一樓的文字切成句子。回傳句子總數。 */
@@ -102,7 +137,7 @@ function counts() {
         const n = pickedSentences(mes).size;
         if (n) { sents += n; floors++; }
     });
-    const imgs = document.querySelectorAll('#chat img.baozi-img-picked').length;
+    const imgs = document.querySelectorAll('#chat .baozi-sel-img.picked').length;
     return { sents, floors, imgs };
 }
 
@@ -132,27 +167,25 @@ function onChatClick(ev) {
         const all = [...new Set([...mes.querySelectorAll('.baozi-sent')].map(s => s.dataset.s))];
         const allOn = all.length && all.every(s => mes.querySelector(`.baozi-sent[data-s="${s}"]`).classList.contains('picked'));
         all.forEach(s => setPicked(mes, s, !allOn));
-    } else if (ev.target.closest('img') && messageImages(mes).includes(ev.target.closest('img'))) {
-        ev.target.closest('img').classList.toggle('baozi-img-picked');
+    } else if (ev.target.closest('.baozi-sel-img')) {
+        ev.target.closest('.baozi-sel-img').classList.toggle('picked');
     } else {
         const sent = ev.target.closest('.baozi-sent');
         if (sent) setPicked(mes, sent.dataset.s, !sent.classList.contains('picked'));
     }
     mes.classList.toggle('baozi-picked', pickedSentences(mes).size > 0
-        || !!mes.querySelector('img.baozi-img-picked'));
+        || !!mes.querySelector('.baozi-sel-img.picked'));
     refreshBar();
 }
 
 export function exitSelectMode() {
     selecting = false;
     document.body.classList.remove('baozi-selecting');
-    for (const [el, html] of originals) {
-        if (document.body.contains(el)) el.innerHTML = html;
-    }
-    originals.clear();
-    document.querySelectorAll('#chat .baozi-pick-all').forEach(el => el.remove());
+    document.querySelectorAll('#chat .baozi-sel-copy, #chat .baozi-sel-imgs, #chat .baozi-pick-all')
+        .forEach(el => el.remove());
+    for (const [el, display] of hidden) el.style.display = display;
+    hidden.length = 0;
     document.querySelectorAll('#chat .baozi-picked').forEach(el => el.classList.remove('baozi-picked'));
-    document.querySelectorAll('#chat .baozi-img-picked').forEach(el => el.classList.remove('baozi-img-picked'));
     document.removeEventListener('click', onChatClick, true);
     bar?.remove();
     bar = null;
@@ -163,7 +196,7 @@ function readSelection() {
     const out = [];
     document.querySelectorAll('#chat .mes').forEach(mes => {
         const picked = pickedSentences(mes);
-        const imgs = [...mes.querySelectorAll('img.baozi-img-picked')];
+        const imgs = [...mes.querySelectorAll('.baozi-sel-img.picked')];
         if (!picked.size && !imgs.length) return;
         // 照句子順序組起來：連續的接在一起（原本有換行就換行），跳過的地方放「……」
         const sentences = new Map();
@@ -189,10 +222,41 @@ function readSelection() {
             name: mes.querySelector('.name_text')?.textContent?.trim() || '',
             avatarSrc: mes.querySelector('.avatar img')?.src || '',
             text: text.trim(),
-            imageSrcs: imgs.map(img => img.currentSrc || img.src),
+            imageSrcs: imgs.map(el => el.dataset.src),
         });
     });
     return out;
+}
+
+/** 畫面中間現在停著的那一樓。 */
+function currentFloor() {
+    const mid = window.innerHeight / 2;
+    let best = null, bestDist = Infinity;
+    for (const mes of document.querySelectorAll('#chat .mes')) {
+        const r = mes.getBoundingClientRect();
+        if (r.height === 0) continue;
+        if (r.top <= mid && r.bottom >= mid) return mes;
+        const d = Math.min(Math.abs(r.top - mid), Math.abs(r.bottom - mid));
+        if (d < bestDist) { bestDist = d; best = mes; }
+    }
+    return best;
+}
+
+/** 跳到這一樓的開頭或結尾（樓很長、一直滑很累的時候用）。 */
+function jumpInFloor(where) {
+    const mes = currentFloor();
+    if (!mes) return;
+    if (where === 'top') {
+        mes.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    } else {
+        // 結尾要留一點空間，不然被底下的工具列蓋住
+        mes.scrollIntoView({ block: 'end', behavior: 'smooth' });
+        setTimeout(() => {
+            const chat = document.getElementById('chat');
+            const barH = bar?.offsetHeight || 0;
+            if (chat) chat.scrollBy({ top: barH + 16, behavior: 'smooth' });
+        }, 350);
+    }
 }
 
 export function enterSelectMode() {
@@ -201,10 +265,21 @@ export function enterSelectMode() {
     selecting = true;
     document.body.classList.add('baozi-selecting');
     document.querySelectorAll('#chat .mes').forEach(mes => {
-        const textEl = mes.querySelector('.mes_text');
+        const textEl = mes.querySelector('.mes_text:not(.baozi-sel-copy)');
         if (!textEl) return;
-        originals.set(textEl, textEl.innerHTML);
-        if (splitSentences(textEl) > 0) {
+        const srcs = messageImageSrcs(mes);
+        const copy = makeCopy(textEl);
+        const sentences = splitSentences(copy);
+        hidden.push([textEl, textEl.style.display]);
+        textEl.style.display = 'none';
+        textEl.after(copy);
+        if (srcs.length) {
+            const row = document.createElement('div');
+            row.className = 'baozi-sel-imgs';
+            row.innerHTML = srcs.map(src => `<div class="baozi-sel-img" data-src="${esc(src)}"><img src="${esc(src)}" alt=""></div>`).join('');
+            copy.after(row);
+        }
+        if (sentences > 0) {
             const btn = document.createElement('button');
             btn.className = 'baozi-pick-all';
             btn.textContent = '全選這樓';
@@ -221,12 +296,17 @@ export function enterSelectMode() {
             <button class="baozi-btn-small baozi-on" data-a="shot">📸 做成圖片</button>
             <button class="baozi-btn-small" data-a="images">🖼️ 分享圖片</button>
             <button class="baozi-btn-small" data-a="cancel">✕ 取消</button>
+            <span class="baozi-select-jump">
+                <button class="baozi-btn-small" data-a="top" title="這一樓的開頭">⤒ 樓頂</button>
+                <button class="baozi-btn-small" data-a="bottom" title="這一樓的結尾">⤓ 樓底</button>
+            </span>
         </div>`;
     document.body.appendChild(bar);
     localizeLive(bar);
     bar.addEventListener('click', async (ev) => {
         const a = ev.target.closest('[data-a]')?.dataset.a;
         if (a === 'cancel') exitSelectMode();
+        if (a === 'top' || a === 'bottom') jumpInFloor(a);
         if (a === 'shot') {
             const picked = readSelection();
             exitSelectMode();

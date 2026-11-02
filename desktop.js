@@ -165,6 +165,15 @@ export async function renderDesktop(container, ui) {
         el.textContent = clockText();
     }, 20_000);
 
+    // App 圖示一進來就要能按 —— 不等小組件的資料（資料讀不到也照樣能用）
+    container.querySelector('.bz-apps').onclick = (ev) => {
+        const app = ev.target.closest('[data-app]')?.dataset.app;
+        if (app === 'shot') ui.shot();
+        if (app === 'album') ui.go('album');
+        if (app === 'dice') ui.dice();
+        if (app === 'notifications') ui.notifications();
+    };
+
     const grid = container.querySelector('#bz-grid');
     let data;
     try {
@@ -229,11 +238,4 @@ export async function renderDesktop(container, ui) {
             go.dataset.go === 'played' ? { filter: 'played' } : {});
     };
 
-    container.querySelector('.bz-apps').onclick = (ev) => {
-        const app = ev.target.closest('[data-app]')?.dataset.app;
-        if (app === 'shot') ui.shot();
-        if (app === 'album') ui.go('album');
-        if (app === 'dice') ui.dice();
-        if (app === 'notifications') ui.notifications();
-    };
 }

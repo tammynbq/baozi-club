@@ -1986,3 +1986,35 @@ body.baozi-selecting #chat img.baozi-img-picked {
     display: flex; align-items: center; justify-content: center;
     font-size: 26px; box-shadow: 0 3px 8px rgba(139, 90, 60, 0.15);
 }
+
+/* ---------- 📸 選取用副本 ---------- */
+body.baozi-selecting #chat .baozi-sel-copy { cursor: pointer; }
+.baozi-sel-imgs { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0 2px; }
+.baozi-sel-img {
+    width: 84px;
+    height: 84px;
+    border-radius: 10px;
+    overflow: hidden;
+    border: 2px dashed rgba(255, 181, 167, 0.7);
+    cursor: pointer;
+    position: relative;
+    background: rgba(255, 255, 255, 0.1);
+}
+.baozi-sel-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.baozi-sel-img.picked { border: 3px solid #F4A5B5; }
+.baozi-sel-img.picked::after {
+    content: '✓';
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #F4A5B5;
+    color: #fff;
+    font-size: 12px;
+    line-height: 20px;
+    text-align: center;
+    font-weight: 700;
+}
+.baozi-select-jump { display: inline-flex; gap: 6px; margin-left: auto; }

@@ -2018,3 +2018,24 @@ body.baozi-selecting #chat .baozi-sel-copy { cursor: pointer; }
     font-weight: 700;
 }
 .baozi-select-jump { display: inline-flex; gap: 6px; margin-left: auto; }
+
+/* ---------- 💬 聊天室在滿屏裡撐滿（2.0.2） ----------
+   以前訊息區寫死 440px 高，滿屏之後輸入框停在半路、下面空一大塊。
+   改成整個聊天畫面等於內容區的高度：訊息區吃掉剩下的空間，輸入框貼底。 */
+.baozi-body.baozi-body-chat,
+.baozi-body:has(> .baozi-chat) { display: flex; flex-direction: column; overflow: hidden; padding-bottom: 8px; }
+.baozi-chat { flex: 1 1 auto; min-height: 0; }
+.baozi-chat .baozi-chat-list { height: auto; flex: 1 1 auto; min-height: 0; }
+.baozi-chat-img { cursor: zoom-in; }
+.baozi-chat-viewer {
+    position: fixed;
+    inset: 0;
+    z-index: 100001;
+    background: rgba(0, 0, 0, 0.88);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 12px;
+    cursor: zoom-out;
+}
+.baozi-chat-viewer img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 6px; }

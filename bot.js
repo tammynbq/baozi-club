@@ -612,6 +612,7 @@ let chatSession = null;
 export function closeChat() {
     if (chatSession) chatSession.stop();
     chatSession = null;
+    document.getElementById('baozi-body')?.classList.remove('baozi-body-chat');
 }
 
 function fmtTime(iso) {
@@ -643,6 +644,7 @@ function messageHtml(m) {
 
 export async function renderChatScreen(container, ui) {
     closeChat();
+    container.classList.add('baozi-body-chat');   // 舊手機不支援 :has()，用 class 也撐得滿
     container.innerHTML = `
         <div class="baozi-screen baozi-chat" id="baozi-chat-root">
             <div class="baozi-screen-header">
@@ -658,6 +660,16 @@ export async function renderChatScreen(container, ui) {
         </div>
     `;
     const list = container.querySelector('#baozi-chat-list');
+    // 點圖片看大圖（長按大圖可以存）
+    list.addEventListener('click', (ev) => {
+        const img = ev.target.closest('.baozi-chat-img');
+        if (!img) return;
+        const viewer = document.createElement('div');
+        viewer.className = 'baozi-chat-viewer';
+        viewer.innerHTML = `<img src="${esc(img.src)}" alt="">`;
+        viewer.addEventListener('click', () => viewer.remove());
+        document.body.appendChild(viewer);
+    });
     const dot = container.querySelector('#baozi-chat-dot');
     const input = container.querySelector('#baozi-chat-text');
     const sendBtn = container.querySelector('#baozi-chat-send');

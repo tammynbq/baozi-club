@@ -1725,3 +1725,28 @@ a.baozi-btn-small {
     font-family: inherit;
     padding: 0;
 }
+
+/* ---------- 🥟 自動標記的小提示 ---------- */
+.baozi-toast {
+    position: fixed;
+    left: 12px;
+    right: 12px;
+    bottom: 90px;
+    max-width: 420px;
+    margin: 0 auto;
+    z-index: 99998;
+    background: var(--baozi-cream);
+    color: var(--baozi-brown);
+    border-radius: 16px;
+    padding: 12px 14px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+    font-size: 13px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    animation: baozi-toast-in .25s ease-out;
+}
+@keyframes baozi-toast-in { from { transform: translateY(20px); opacity: 0; } }
+.baozi-toast-title { font-weight: 700; font-size: 14px; }
+.baozi-toast-hint { font-size: 11px; opacity: .75; }
+.baozi-toast-row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 2px; }

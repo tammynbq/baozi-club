@@ -9,7 +9,7 @@
 // 鑰匙存在這支手機的 localStorage；大包子那邊只存它的指紋。
 // ============================================================
 
-import { t } from './i18n.js';
+import { t, localizeLive } from './i18n.js';
 
 const KEY_URL = 'baozi_bot_url';
 // 大包子在 Railway 的網址。寫死在這裡就不用每支手機自己填；
@@ -530,6 +530,10 @@ export async function renderDiceSettings(box) {
         <button class="baozi-tag-chip baozi-toggle-chip ${prefs.random_by_character ? 'active' : ''}" id="baozi-dice-char">
             ${prefs.random_by_character ? '✓' : '○'} 玩過／沒玩過只看現在開著的角色
         </button>
+        <div class="baozi-setup-section-title" style="margin-top:16px;">🥟 自動記錄</div>
+        <button class="baozi-tag-chip baozi-toggle-chip ${prefs.auto_mark ? 'active' : ''}" id="baozi-auto-mark">
+            ${prefs.auto_mark ? '✓' : '○'} 送出小劇場指令時，自動記上玩過／問要不要存進包子
+        </button>
         <div class="baozi-setup-section-title" style="margin-top:16px;">🔔 通知</div>
         <button class="baozi-tag-chip baozi-toggle-chip ${prefs.notify_discord ? 'active' : ''}" id="baozi-notify-dc">
             ${prefs.notify_discord ? '✓' : '○'} 被力推時，大包子也在 Discord 私訊我
@@ -539,11 +543,15 @@ export async function renderDiceSettings(box) {
     // 用按鈕當勾選框：tt 的主題會改寫原生 checkbox 的樣子（變成一條細線）
     const saved = box.querySelector('#baozi-dice-saved');
     box.addEventListener('click', async (ev) => {
-        const chip = ev.target.closest('[data-pool], #baozi-dice-char, #baozi-notify-dc');
+        const chip = ev.target.closest('[data-pool], #baozi-dice-char, #baozi-notify-dc, #baozi-auto-mark');
         if (!chip) return;
         chip.classList.toggle('active');
         if (chip.id === 'baozi-dice-char') {
             chip.textContent = (chip.classList.contains('active') ? '✓' : '○') + ' 玩過／沒玩過只看現在開著的角色';
+        }
+        if (chip.id === 'baozi-auto-mark') {
+            chip.textContent = (chip.classList.contains('active') ? '✓' : '○') + ' 送出小劇場指令時，自動記上玩過／問要不要存進包子';
+            autoMarkOn = chip.classList.contains('active');
         }
         if (chip.id === 'baozi-notify-dc') {
             chip.textContent = (chip.classList.contains('active') ? '✓' : '○') + ' 被力推時，大包子也在 Discord 私訊我';
@@ -560,6 +568,7 @@ export async function renderDiceSettings(box) {
                     random_pools: pools,
                     random_by_character: box.querySelector('#baozi-dice-char').classList.contains('active'),
                     notify_discord: box.querySelector('#baozi-notify-dc').classList.contains('active'),
+                    auto_mark: box.querySelector('#baozi-auto-mark').classList.contains('active'),
                 },
             });
             saved.textContent = '✓ 存好了';
@@ -855,4 +864,165 @@ export async function renderNotificationsScreen(container, ui) {
             alert(t(e.message));
         }
     });
+}
+
+
+// ============================================================
+// 🥟 自動標記：她送出的是哪一則小劇場？不是的話要不要存？
+// ============================================================
+// 酒館每送出一則她的訊息就問大包子：
+//   - 對到庫裡某一則（或是剛剛「拿去玩」的那則）→ 記上「這個角色玩過」，跳小提示可以復原
+//   - 對不到、但看起來像指令（開頭 $、或有「暫停當前劇情」「生成番外小劇場」）→ 問要不要存
+// 只在開著自己老公的聊天時記（對方的老公不碰）。
+
+let autoMarkOn = true;
+const NO_ASK_KEY = 'baozi_no_ask';
+const HINT_WINDOW_MS = 2 * 60 * 60 * 1000;   // 「拿去玩」之後兩小時內送出都算
+
+function fingerprint(text) {
+    const s = String(text).replace(/\s+/g, '').replace(/^[$＄]+/, '');
+    let h = 0;
+    for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+    return String(h);
+}
+
+function noAskList() {
+    try { return JSON.parse(localStorage.getItem(NO_ASK_KEY) || '[]'); } catch { return []; }
+}
+
+function addNoAsk(text) {
+    const list = noAskList();
+    list.push(fingerprint(text));
+    try { localStorage.setItem(NO_ASK_KEY, JSON.stringify(list.slice(-200))); } catch { /* 存不了就算了 */ }
+}
+
+function showToast(html, { autoHide = 0 } = {}) {
+    document.getElementById('baozi-toast')?.remove();
+    const el = document.createElement('div');
+    el.id = 'baozi-toast';
+    el.className = 'baozi-toast';
+    el.innerHTML = html;
+    document.body.appendChild(el);
+    localizeLive(el);
+    let timer = autoHide ? setTimeout(() => el.remove(), autoHide) : null;
+    // 她在操作的時候別自己消失
+    el.addEventListener('pointerdown', () => { clearTimeout(timer); timer = null; });
+    return el;
+}
+
+function markedToast(cmd, character) {
+    const el = showToast(`
+        <div class="baozi-toast-title">🥟 記下來了</div>
+        <div>${esc(character)}玩過 <b>#${cmd.id}「<span data-raw>${esc(cmd.title)}</span>」</b></div>
+        <div class="baozi-toast-hint">Discord 論壇的面板也一起更新了</div>
+        <div class="baozi-toast-row">
+            <button class="baozi-btn-small" data-a="undo">↩️ 復原</button>
+            <button class="baozi-btn-small" data-a="close">好</button>
+        </div>`, { autoHide: 8000 });
+    el.addEventListener('click', async (ev) => {
+        const a = ev.target.closest('[data-a]')?.dataset.a;
+        if (a === 'close') el.remove();
+        if (a === 'undo') {
+            try {
+                await botFetch(`/club/commands/${cmd.id}/used`, {
+                    method: 'POST', body: { characters: [character], mode: 'remove' },
+                });
+                el.innerHTML = `<div class="baozi-toast-title">↩️ 取消了</div>`;
+                setTimeout(() => el.remove(), 1500);
+            } catch (e) { alert(t(e.message)); }
+        }
+    });
+}
+
+function guessTitle(text) {
+    const first = String(text).replace(/^[\s$＄]+/, '').split('\n')[0]
+        .replace(/^(暫停當前劇情|暂停当前剧情)[，,。\s]*/, '')
+        .replace(/^(生成番外小劇場|生成番外小剧场)[：:，,\s]*/, '');
+    return first.slice(0, 20);
+}
+
+function askToSave(text, character) {
+    const el = showToast(`
+        <div class="baozi-toast-title">🥟 這則小劇場包子還沒有，要存進去嗎？</div>
+        <input type="text" class="baozi-search" data-f="title" maxlength="100" placeholder="標題" value="${esc(guessTitle(text))}">
+        <input type="text" class="baozi-search" data-f="topics" placeholder="題材（用逗號分開，可以不填）">
+        <div class="baozi-toast-hint">${character ? `存了會發到 Discord 論壇，並記上「${esc(character)}玩過」` : '存了會發到 Discord 論壇'}</div>
+        <div class="baozi-toast-row">
+            <button class="baozi-btn-small baozi-on" data-a="save">📮 存進包子</button>
+            <button class="baozi-btn-small" data-a="skip">這次不用</button>
+            <button class="baozi-btn-small" data-a="never">這則別再問</button>
+        </div>`, { autoHide: 60000 });
+    el.addEventListener('click', async (ev) => {
+        const btn = ev.target.closest('[data-a]');
+        if (!btn) return;
+        if (btn.dataset.a === 'skip') { el.remove(); return; }
+        if (btn.dataset.a === 'never') { addNoAsk(text); el.remove(); return; }
+        btn.disabled = true;
+        try {
+            const res = await botFetch('/club/commands', {
+                method: 'POST',
+                body: {
+                    title: el.querySelector('[data-f="title"]').value.trim(),
+                    topics: el.querySelector('[data-f="topics"]').value,
+                    body: text,
+                    character,
+                },
+            });
+            el.innerHTML = `<div class="baozi-toast-title">📮 ${res.created ? '存好了' : '包子本來就有這則'}</div>
+                <div><b>#${res.command.id}「<span data-raw>${esc(res.command.title)}</span>」</b>${character ? `，記上${esc(character)}玩過` : ''}</div>`;
+            setTimeout(() => el.remove(), 4000);
+        } catch (e) {
+            btn.disabled = false;
+            alert(t(e.message));
+        }
+    });
+}
+
+async function onMessageSent(messageId) {
+    if (!autoMarkOn || !isBotLoggedIn()) return;
+    const ctx = stContext();
+    const msg = ctx?.chat?.[messageId];
+    if (!msg?.is_user || ctx.groupId) return;
+    const text = String(msg.mes || '').trim();
+    if (!text) return;
+    const character = currentCharacter();
+    const hint = lastPlayed && Date.now() - lastPlayed.at < HINT_WINDOW_MS ? lastPlayed.id : null;
+    let res;
+    try {
+        res = await botFetch('/club/match', { method: 'POST', body: { text, hint } });
+    } catch (e) {
+        console.warn('[包子同好會] 自動標記問不到大包子', e);
+        return;
+    }
+    if (res.match) {
+        if (res.match.id === hint) lastPlayed = null;
+        if (!character) return;                 // 不是自己老公的聊天，不記
+        try {
+            const r = await botFetch(`/club/commands/${res.match.id}/used`, {
+                method: 'POST', body: { characters: [character], mode: 'add' },
+            });
+            if (r.changed) markedToast(res.match, character);
+        } catch (e) {
+            console.warn('[包子同好會] 自動標記失敗', e);
+        }
+        return;
+    }
+    if (res.looks_like_command && !noAskList().includes(fingerprint(text))) {
+        askToSave(text, character);
+    }
+}
+
+/** 開機時呼叫：掛上酒館的「送出訊息」事件，順便讀一次設定。 */
+export function startAutoMark() {
+    const ctx = stContext();
+    const source = ctx?.eventSource;
+    const type = (ctx?.eventTypes || ctx?.event_types)?.MESSAGE_SENT;
+    if (!source || !type) {
+        console.warn('[包子同好會] 這個酒館沒有 MESSAGE_SENT 事件，自動標記不開');
+        return;
+    }
+    source.on(type, (id) => { onMessageSent(id).catch(err => console.warn('[包子同好會]', err)); });
+    if (isBotLoggedIn()) {
+        botFetch('/club/prefs').then(p => { autoMarkOn = p.auto_mark !== false; }).catch(() => {});
+    }
 }

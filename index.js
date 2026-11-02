@@ -15,6 +15,7 @@ import {
     fetchNotifications, renderNotificationsScreen, startAutoMark,
 } from './bot.js';
 import { localizeLive, refreshLocale, t } from './i18n.js';
+import { enterSelectMode, renderAlbumScreen } from './shots.js';
 
 const extensionName = "baozi-club";
 const extensionFolderPath = `scripts/extensions/third-party/${extensionName}`;
@@ -1444,6 +1445,14 @@ function renderHomeScreen(container) {
                     <span class="baozi-menu-icon">📖</span>
                     <span>大包子指令庫</span>
                 </button>
+                <button class="baozi-menu-btn" data-target="shot">
+                    <span class="baozi-menu-icon">📸</span>
+                    <span>截圖／分享圖</span>
+                </button>
+                <button class="baozi-menu-btn" data-target="album">
+                    <span class="baozi-menu-icon">🖼️</span>
+                    <span>相簿</span>
+                </button>
                 <button class="baozi-menu-btn" data-target="chat">
                     <span class="baozi-menu-icon">💬</span>
                     <span>聊天</span>
@@ -1462,6 +1471,8 @@ function renderHomeScreen(container) {
                 case 'today': openLibrary(container, { filter: 'today' }); break;
                 case 'library': openLibrary(container, { filter: 'all' }); break;
                 case 'chat': renderChatScreen(container, { back: () => renderHomeScreen(container) }); break;
+                case 'shot': closePanel(); enterSelectMode(); break;
+                case 'album': renderAlbumScreen(container, { back: () => renderHomeScreen(container), closePanel }); break;
                 case 'settings': renderSettingsScreen(container); break;
             }
         });

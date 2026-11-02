@@ -99,7 +99,7 @@ export async function refreshMe() {
 // 現在開著誰的聊天
 // ============================================================
 
-function stContext() {
+export function stContext() {
     try {
         return globalThis.SillyTavern?.getContext?.() || null;
     } catch {
@@ -195,6 +195,26 @@ const view = { filter: 'all', character: null, q: '' };
 
 // 最近一次按「拿去玩」的是哪一則（之後自動標記要用）
 export let lastPlayed = null;
+
+// 現在在玩哪則小劇場（截圖、收藏要附上）：拿去玩、自動標記對到、或剛存的那則。
+// 六小時內、同一個聊天才算。
+let activePromptState = null;
+const ACTIVE_PROMPT_MS = 6 * 60 * 60 * 1000;
+
+function chatKey() {
+    const ctx = stContext();
+    try { return String(ctx?.getCurrentChatId?.() ?? ctx?.chatId ?? ''); } catch { return ''; }
+}
+
+export function setActivePrompt(id, title) {
+    activePromptState = { id, title, at: Date.now(), chat: chatKey() };
+}
+
+export function activePrompt() {
+    const a = activePromptState;
+    if (!a || Date.now() - a.at > ACTIVE_PROMPT_MS || a.chat !== chatKey()) return null;
+    return a;
+}
 
 /** 把指令填進酒館的輸入框（不送出），游標放到最後。 */
 function fillChatInput(text) {
@@ -388,6 +408,7 @@ export async function renderLibraryScreen(container, ui, opts = {}) {
                     await withBody(cmd);
                     if (!fillChatInput(cmd.body)) { alert(t('找不到酒館的輸入框～先打開一個聊天')); break; }
                     lastPlayed = { id: cmd.id, title: cmd.title, body: cmd.body, at: Date.now() };
+                    setActivePrompt(cmd.id, cmd.title);
                     ui.closePanel?.();
                     break;
                 }
@@ -968,6 +989,7 @@ function askToSave(text, character) {
                     character,
                 },
             });
+            setActivePrompt(res.command.id, res.command.title);
             el.innerHTML = `<div class="baozi-toast-title">📮 ${res.created ? '存好了' : '包子本來就有這則'}</div>
                 <div><b>#${res.command.id}「<span data-raw>${esc(res.command.title)}</span>」</b>${character ? `，記上${esc(character)}玩過` : ''}</div>`;
             setTimeout(() => el.remove(), 4000);
@@ -996,6 +1018,7 @@ async function onMessageSent(messageId) {
     }
     if (res.match) {
         if (res.match.id === hint) lastPlayed = null;
+        setActivePrompt(res.match.id, res.match.title);
         if (!character) return;                 // 不是自己老公的聊天，不記
         try {
             const r = await botFetch(`/club/commands/${res.match.id}/used`, {

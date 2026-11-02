@@ -15,9 +15,10 @@ import re
 import opencc
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-SOURCES = [ROOT / "index.js", ROOT / "bot.js",
+SOURCES = [ROOT / "index.js", ROOT / "bot.js", ROOT / "shots.js",
            ROOT.parent / "BIG-baozi" / "club" / "api.py",
-           ROOT.parent / "BIG-baozi" / "club" / "chat.py"]
+           ROOT.parent / "BIG-baozi" / "club" / "chat.py",
+           ROOT.parent / "BIG-baozi" / "club" / "shots.py"]
 
 cc = opencc.OpenCC("t2s")
 text = "".join(p.read_text(encoding="utf-8") for p in SOURCES if p.exists())

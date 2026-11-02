@@ -13,6 +13,7 @@ import {
     renderLibraryScreen, renderChatScreen, closeChat,
     rollDice, renderDiceSettings, DICE_EMPTY,
 } from './bot.js';
+import { localizeLive, refreshLocale, t } from './i18n.js';
 
 const extensionName = "baozi-club";
 const extensionFolderPath = `scripts/extensions/third-party/${extensionName}`;
@@ -881,6 +882,8 @@ function buildUI() {
         </div>
     `;
     document.body.appendChild(panel);
+    localizeLive(panel);
+    localizeLive(floatBtn);
 
     // 恢復之前儲存的面板位置（只在桌面版，手機版每次都置中）
     restorePanelPosition(panel);
@@ -1168,6 +1171,7 @@ function insertExtensionSettings() {
             </div>
         `;
         container.appendChild(settingsBlock);
+        localizeLive(settingsBlock);
 
         // 綁定按鈕（用 optional chaining 避免找不到元素時整個崩掉）
         document.getElementById('baozi-open-main')?.addEventListener('click', openPanel);
@@ -1203,6 +1207,7 @@ function updateExtStatus(text, type = 'info') {
 
 /** 打開主面板 */
 function openPanel() {
+    refreshLocale();
     const panel = document.getElementById('baozi-panel');
     const overlay = document.getElementById('baozi-overlay');
     if (!panel) return;
@@ -1469,10 +1474,10 @@ async function onDice() {
     closeChat();
     try {
         const res = await rollDice();
-        if (!res.command) { alert(DICE_EMPTY); return; }
+        if (!res.command) { alert(t(DICE_EMPTY)); return; }
         openLibrary(body, { pinned: res.command });
     } catch (err) {
-        alert(err.message);
+        alert(t(err.message));
     }
 }
 
@@ -2325,7 +2330,7 @@ function renderSettingsScreen(container) {
     document.getElementById('baozi-back').addEventListener('click', () => renderHomeScreen(container));
     renderDiceSettings(document.getElementById('baozi-dice-settings'));
     document.getElementById('baozi-bot-logout').addEventListener('click', () => {
-        if (confirm('登出？之後要到 Discord 打 /club 登入 重新拿碼。')) {
+        if (confirm(t('登出？之後要到 Discord 打 /club 登入 重新拿碼。'))) {
             botLogout();
             state.isReady = false;
             renderMainContent();

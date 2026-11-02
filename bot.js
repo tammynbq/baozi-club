@@ -368,3 +368,176 @@ export async function renderLibraryScreen(container, ui) {
 
     load();
 }
+
+
+// ============================================================
+// 💬 聊天室（跟 Discord 的一個頻道互通）
+// ============================================================
+// 打開時先拿最近 50 則，再開一條 WebSocket 等新訊息。
+// 斷線（手機切背景之類）就自動重連，重連後用 ?after= 補漏掉的。
+// 離開聊天畫面就把線關掉。
+
+let chatSession = null;
+
+export function closeChat() {
+    if (chatSession) chatSession.stop();
+    chatSession = null;
+}
+
+function fmtTime(iso) {
+    const d = new Date(iso);
+    const now = new Date();
+    const hm = d.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', hour12: false });
+    return d.toDateString() === now.toDateString() ? hm : `${d.getMonth() + 1}/${d.getDate()} ${hm}`;
+}
+
+function messageHtml(m) {
+    const text = esc(m.text).replace(/\n/g, '<br>');
+    const imgs = (m.images || []).map(u => `<img class="baozi-chat-img" src="${esc(u)}" loading="lazy">`).join('');
+    const files = (m.files || []).map(f => `<a class="baozi-chat-file" href="${esc(f.url)}" target="_blank" rel="noopener">📎 ${esc(f.name)}</a>`).join('');
+    return `
+        <div class="baozi-chat-msg ${m.mine ? 'mine' : ''}" data-id="${esc(m.id)}">
+            <img class="baozi-chat-avatar" src="${esc(m.avatar)}" alt="">
+            <div class="baozi-chat-main">
+                <div class="baozi-chat-meta"><b>${esc(m.author)}</b> <span>${fmtTime(m.ts)}</span></div>
+                ${text ? `<div class="baozi-chat-bubble">${text}</div>` : ''}
+                ${imgs}${files}
+            </div>
+        </div>`;
+}
+
+export async function renderChatScreen(container, ui) {
+    closeChat();
+    container.innerHTML = `
+        <div class="baozi-screen baozi-chat" id="baozi-chat-root">
+            <div class="baozi-screen-header">
+                <button class="baozi-back" id="baozi-back">← 回首頁</button>
+                <h3>💬 <span id="baozi-chat-title">聊天</span></h3>
+                <span class="baozi-chat-dot" id="baozi-chat-dot" title="連線狀態"></span>
+            </div>
+            <div class="baozi-chat-list" id="baozi-chat-list"><div class="baozi-loading">載入中...</div></div>
+            <div class="baozi-chat-input">
+                <textarea id="baozi-chat-text" rows="1" placeholder="說點什麼…"></textarea>
+                <button class="baozi-btn-primary" id="baozi-chat-send">送出</button>
+            </div>
+        </div>
+    `;
+    const list = container.querySelector('#baozi-chat-list');
+    const dot = container.querySelector('#baozi-chat-dot');
+    const input = container.querySelector('#baozi-chat-text');
+    const sendBtn = container.querySelector('#baozi-chat-send');
+    const seen = new Set();
+    let lastId = '';
+    let ws = null;
+    let stopped = false;
+    let retry = 0;
+    let retryTimer = null;
+
+    const alive = () => !stopped && document.body.contains(container.querySelector('#baozi-chat-root'));
+    const setDot = (state) => { dot.dataset.state = state; };
+
+    function append(messages) {
+        const nearBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 80;
+        if (list.querySelector('.baozi-loading, .baozi-empty')) list.innerHTML = '';
+        let added = false;
+        for (const m of messages) {
+            if (seen.has(m.id)) continue;
+            seen.add(m.id);
+            list.insertAdjacentHTML('beforeend', messageHtml(m));
+            if (BigInt(m.id) > BigInt(lastId || '0')) lastId = m.id;
+            added = true;
+        }
+        if (added && (nearBottom || messages.some(m => m.mine))) list.scrollTop = list.scrollHeight;
+        if (!list.children.length) list.innerHTML = '<div class="baozi-empty">還沒有人說話～</div>';
+    }
+
+    async function catchUp() {
+        const data = await botFetch('/club/chat' + (lastId ? '?after=' + lastId : ''));
+        container.querySelector('#baozi-chat-title').textContent = '#' + data.channel;
+        append(data.messages);
+    }
+
+    function connect() {
+        if (!alive()) return;
+        setDot('connecting');
+        ws = new WebSocket(bot.url.replace(/^http/i, 'ws') + '/club/ws');
+        ws.onopen = () => ws.send(JSON.stringify({ type: 'auth', token: bot.token }));
+        ws.onmessage = (ev) => {
+            if (!alive()) { stop(); return; }
+            let data;
+            try { data = JSON.parse(ev.data); } catch { return; }
+            if (data.type === 'ready') {
+                retry = 0;
+                setDot('on');
+                catchUp().catch(() => {});  // 連上之前漏掉的
+            } else if (data.type === 'message') {
+                append([data.message]);
+            } else if (data.type === 'error') {
+                setDot('off');
+            }
+        };
+        ws.onclose = () => {
+            ws = null;
+            if (!alive()) return;
+            setDot('off');
+            const wait = [1000, 2000, 5000, 10000][Math.min(retry++, 3)];
+            retryTimer = setTimeout(connect, wait);
+        };
+    }
+
+    function stop() {
+        stopped = true;
+        clearTimeout(retryTimer);
+        document.removeEventListener('visibilitychange', onVisible);
+        if (ws) { ws.onclose = null; ws.close(); ws = null; }
+    }
+
+    // 從背景切回來：線斷了就馬上重連，不等倒數
+    function onVisible() {
+        if (document.hidden || !alive()) return;
+        if (!ws) { clearTimeout(retryTimer); retry = 0; connect(); }
+    }
+    document.addEventListener('visibilitychange', onVisible);
+
+    chatSession = { stop };
+
+    async function send() {
+        const text = input.value.trim();
+        if (!text) return;
+        sendBtn.disabled = true;
+        try {
+            await botFetch('/club/chat', { method: 'POST', body: { text } });
+            input.value = '';
+            input.style.height = '';
+            if (!ws || ws.readyState !== WebSocket.OPEN) await catchUp();
+        } catch (e) {
+            alert(e.message);
+        } finally {
+            sendBtn.disabled = false;
+            input.focus();
+        }
+    }
+
+    sendBtn.addEventListener('click', send);
+    input.addEventListener('keydown', (ev) => {
+        // 電腦上 Enter 送出、Shift+Enter 換行；手機上的 Enter 照常換行，用按鈕送
+        if (ev.key === 'Enter' && !ev.shiftKey && !ev.isComposing && !/Mobi|Android|iPhone/i.test(navigator.userAgent)) {
+            ev.preventDefault();
+            send();
+        }
+    });
+    input.addEventListener('input', () => {
+        input.style.height = '';
+        input.style.height = Math.min(input.scrollHeight, 120) + 'px';
+    });
+    container.querySelector('#baozi-back').addEventListener('click', () => { closeChat(); ui.back(); });
+
+    try {
+        await catchUp();
+        list.scrollTop = list.scrollHeight;
+    } catch (e) {
+        list.innerHTML = `<div class="baozi-error">${esc(e.message)}</div>`;
+        return;
+    }
+    connect();
+}

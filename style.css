@@ -1384,3 +1384,52 @@
     color: var(--baozi-brown-soft);
     margin-top: 2px;
 }
+
+/* ---------- 📖 大包子指令庫 ---------- */
+.baozi-lib-char {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--baozi-brown-soft);
+}
+
+.baozi-lib-char select {
+    flex: 1;
+    min-width: 0;
+    padding: 4px 8px;
+    border-radius: 10px;
+    border: 1.5px solid var(--baozi-cream-dark);
+    background: var(--baozi-cream);
+    color: var(--baozi-brown);
+    font-family: inherit;
+    font-size: 13px;
+}
+
+.baozi-lib-status {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 10px;
+    font-size: 12px;
+    margin: 2px 0 8px;
+}
+
+.baozi-lib-played {
+    color: #2D6A5A;
+}
+
+.baozi-lib-friend {
+    color: var(--baozi-pink);
+}
+
+.baozi-btn-small.baozi-on {
+    background: var(--baozi-peach);
+    border-color: var(--baozi-peach);
+    color: #fff;
+}
+
+a.baozi-btn-small {
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+}

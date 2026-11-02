@@ -1870,3 +1870,119 @@ body.baozi-selecting #chat img.baozi-img-picked {
 .baozi-album-thumb img { width: 100%; height: 100%; object-fit: cover; object-position: top; }
 .baozi-album-meta { font-size: 11px; margin: 4px 2px; color: var(--baozi-brown-soft); }
 .baozi-album-actions { display: flex; gap: 4px; align-items: center; }
+
+/* ============================================================
+   📱 滿屏 + 底部分頁列（2.0）
+   ============================================================
+   面板一律滿屏：以前浮在右下角、手機上常常卡在下面要自己拉上來。
+   定位用 !important 蓋掉舊的拖曳／置中寫進去的 inline style。
+   電腦的寬螢幕上置中成一支手機的大小。 */
+#baozi-panel.baozi-open {
+    position: fixed !important;
+    left: 0 !important;
+    top: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    width: 100vw !important;
+    max-width: none !important;
+    height: 100dvh !important;
+    max-height: none !important;
+    border-radius: 0 !important;
+    transform: none !important;
+}
+@media (min-width: 700px) {
+    #baozi-panel.baozi-open {
+        left: 50% !important;
+        right: auto !important;
+        top: 4vh !important;
+        bottom: auto !important;
+        width: 430px !important;
+        height: 92vh !important;
+        margin-left: -215px !important;
+        border-radius: 28px !important;
+    }
+}
+/* 滿屏之後不能拖了：拖曳符號藏起來，但留著位置把右邊的按鈕推到最右 */
+#baozi-panel .baozi-drag-hint { visibility: hidden !important; }
+#baozi-panel-header { padding-top: max(14px, env(safe-area-inset-top)); cursor: default; }
+
+.baozi-tabbar {
+    display: flex;
+    justify-content: space-around;
+    flex-shrink: 0;
+    border-top: 1px solid var(--baozi-cream-dark);
+    background: var(--baozi-cream);
+    padding: 6px 0 max(8px, env(safe-area-inset-bottom));
+}
+.baozi-tabbar[hidden] { display: none; }
+.baozi-tabbar button {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
+    background: none;
+    border: none;
+    font-family: inherit;
+    font-size: 11px;
+    color: var(--baozi-brown-soft);
+    cursor: pointer;
+    padding: 2px 8px;
+}
+.baozi-tabbar button span { font-size: 21px; line-height: 1.2; filter: saturate(.7); }
+.baozi-tabbar button.on { color: var(--baozi-brown); font-weight: 700; }
+.baozi-tabbar button.on span { filter: none; transform: scale(1.08); }
+
+/* ---------- 🏠 桌面 ---------- */
+.bz-desk {
+    margin: -16px;
+    min-height: calc(100% + 32px);
+    padding: 18px 16px 24px;
+    background: linear-gradient(170deg, #FFE9D6 0%, #FFF8EC 45%, #F6E3EF 100%);
+}
+.bz-desk-alt { background: linear-gradient(170deg, #E3F0E8 0%, #FFF8EC 50%, #E8E4F6 100%); }
+.bz-clock { font-size: 52px; font-weight: 700; color: #7a4e33; line-height: 1; letter-spacing: 1px; }
+.bz-date { font-size: 13px; color: var(--baozi-brown-soft); margin: 6px 0 14px; }
+.bz-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.bz-grid > .baozi-loading, .bz-grid > .baozi-error { grid-column: 1 / -1; }
+.bz-w {
+    background: rgba(255, 255, 255, 0.8);
+    border-radius: 22px;
+    padding: 12px 14px;
+    box-shadow: 0 3px 10px rgba(139, 90, 60, 0.12);
+    color: #6b4630;
+    min-width: 0;
+    cursor: default;
+}
+.bz-w[data-go], .bz-w[data-open], .bz-w[data-husband] { cursor: pointer; }
+.bz-wide { grid-column: 1 / -1; }
+.bz-t { font-size: 11px; color: var(--baozi-brown-soft); margin-bottom: 4px; }
+.bz-sub { font-size: 12px; line-height: 1.45; }
+.bz-weather { background: linear-gradient(160deg, #9ec9ef, #d6eaf8); color: #24476b; }
+.bz-weather .bz-t { color: #3d6b95; }
+.bz-deg { font-size: 38px; font-weight: 700; line-height: 1.05; }
+.bz-big { font-size: 30px; font-weight: 700; color: #e0806b; line-height: 1.1; }
+.bz-count .bz-sub { color: var(--baozi-brown-soft); font-size: 11px; }
+.bz-husband { display: flex; gap: 12px; align-items: center; }
+.bz-av { width: 54px; height: 54px; border-radius: 50%; object-fit: cover; flex-shrink: 0; background: var(--baozi-cream-dark); }
+.bz-av-sm { width: 40px; height: 40px; }
+.bz-hinfo { min-width: 0; }
+.bz-name { font-weight: 700; font-size: 15px; }
+.bz-act { font-size: 13px; margin-top: 2px; line-height: 1.45; }
+.bz-mood { font-size: 11px; color: var(--baozi-brown-soft); margin-top: 3px; }
+.bz-refresh { display: inline-block; font-weight: 400; color: var(--baozi-brown-soft); font-size: 13px; margin-left: 4px; }
+.bz-refresh.spin { animation: baozi-spin .8s linear infinite; }
+.bz-crew { display: flex; justify-content: space-between; gap: 4px; overflow-x: auto; }
+.bz-crew-one { text-align: center; font-size: 10px; cursor: pointer; opacity: .7; flex-shrink: 0; }
+.bz-crew-one.on { opacity: 1; font-weight: 700; }
+.bz-crew-one.on .bz-av { box-shadow: 0 0 0 2px #FFB5A7; }
+.bz-pick { background: linear-gradient(135deg, #FFE9A8, #FFD6CE); }
+.bz-ptitle { font-weight: 700; font-size: 16px; margin: 2px 0 4px; line-height: 1.35; }
+.bz-fname { font-weight: 700; font-size: 20px; }
+.bz-line { font-size: 12px; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bz-apps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 18px; }
+.bz-app { display: flex; flex-direction: column; align-items: center; gap: 5px; font-size: 11px; color: var(--baozi-brown); cursor: pointer; }
+.bz-app div {
+    width: 54px; height: 54px; border-radius: 15px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 26px; box-shadow: 0 3px 8px rgba(139, 90, 60, 0.15);
+}

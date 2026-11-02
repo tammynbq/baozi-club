@@ -10,11 +10,14 @@
 // ============================================================
 
 const KEY_URL = 'baozi_bot_url';
+// 大包子在 Railway 的網址。寫死在這裡就不用每支手機自己填；
+// 公開也沒關係 —— 沒有 /club 登入 換來的鑰匙什麼都讀不到。
+export const DEFAULT_BOT_URL = 'https://big-baozi-production.up.railway.app';
 const KEY_TOKEN = 'baozi_bot_token';
 const KEY_ME = 'baozi_bot_me';
 
 export const bot = {
-    url: localStorage.getItem(KEY_URL) || '',
+    url: localStorage.getItem(KEY_URL) || DEFAULT_BOT_URL,
     token: localStorage.getItem(KEY_TOKEN) || '',
     me: readJson(localStorage.getItem(KEY_ME)),
 };
@@ -132,19 +135,21 @@ export function renderBotLoginScreen(container, { onDone, onLegacy } = {}) {
                 <p>到 Discord 打 <b>/club 登入</b>（一帆打 <b>/club 登录</b>），<br>大包子會給你一組碼，10 分鐘內有效。</p>
             </div>
             <div class="baozi-form">
-                <label>大包子的網址</label>
-                <input type="text" id="baozi-bot-url" placeholder="https://xxxx.up.railway.app" value="${esc(bot.url)}" autocapitalize="off" autocorrect="off">
                 <label>登入碼</label>
                 <input type="text" id="baozi-bot-code" placeholder="ABCD-EFGH" autocapitalize="characters" autocorrect="off">
                 <button class="baozi-btn-primary" id="baozi-bot-login">進來 ✨</button>
                 <div class="baozi-error" id="baozi-bot-error"></div>
+                <details style="margin-top:14px; font-size:12px; opacity:.75;">
+                    <summary>大包子換了網址？</summary>
+                    <input type="text" id="baozi-bot-url" placeholder="${esc(DEFAULT_BOT_URL)}" value="${esc(bot.url)}" autocapitalize="off" autocorrect="off" style="margin-top:6px;">
+                </details>
                 ${onLegacy ? '<button class="baozi-btn-small baozi-btn-full" id="baozi-bot-legacy" style="margin-top:14px;">還是用舊的暗號登入</button>' : ''}
             </div>
         </div>
     `;
     const err = container.querySelector('#baozi-bot-error');
     container.querySelector('#baozi-bot-login').addEventListener('click', async () => {
-        const url = normalizeUrl(container.querySelector('#baozi-bot-url').value);
+        const url = normalizeUrl(container.querySelector('#baozi-bot-url').value) || DEFAULT_BOT_URL;
         const code = container.querySelector('#baozi-bot-code').value.trim();
         if (!url) { err.textContent = '要填大包子的網址～'; return; }
         if (!code) { err.textContent = '登入碼呢？'; return; }

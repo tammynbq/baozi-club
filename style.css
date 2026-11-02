@@ -2039,3 +2039,9 @@ body.baozi-selecting #chat .baozi-sel-copy { cursor: pointer; }
     cursor: zoom-out;
 }
 .baozi-chat-viewer img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 6px; }
+
+/* ---------- 🎨 換排版 ---------- */
+.baozi-tpl-chips { display: flex; gap: 6px; overflow-x: auto; flex-wrap: nowrap; padding-bottom: 2px; scrollbar-width: none; }
+.baozi-tpl-chips::-webkit-scrollbar { display: none; }
+.baozi-tpl-chips .baozi-tag-chip { flex-shrink: 0; white-space: nowrap; }
+.baozi-shot-preview img { transition: opacity .2s; }

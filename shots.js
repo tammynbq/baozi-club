@@ -353,7 +353,7 @@ const NO_LINE_START = '。，、；：？！」』）】》〉…—～,.;:?!)]}
 const NO_LINE_END = '「『（【《〈“‘([{';
 
 /** 中文一個字一個字換行；英文單字盡量不拆；標點照中文排版的習慣。 */
-function wrap(ctx, text, maxWidth) {
+export function wrap(ctx, text, maxWidth) {
     const lines = [];
     for (const para of String(text).split('\n')) {
         let line = '';
@@ -389,7 +389,7 @@ function wrap(ctx, text, maxWidth) {
     return lines;
 }
 
-function roundRect(ctx, x, y, w, h, r) {
+export function roundRect(ctx, x, y, w, h, r) {
     ctx.beginPath();
     ctx.moveTo(x + r, y);
     ctx.arcTo(x + w, y, x + w, y + h, r);
@@ -534,6 +534,13 @@ function today() {
     return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
 }
 
+const TPL_KEY = 'baozi_shot_template';
+// 跟 templates.js 的 TEMPLATES 一樣（這裡寫一份，不用為了按鈕的字先把整個排版檔載進來）
+const TEMPLATE_LIST = [
+    ['bubble', '💬 對話泡泡'], ['book', '📖 書頁摘抄'], ['polaroid', '📷 拍立得'], ['cinema', '🎬 電影字幕'],
+    ['ancient', '🏮 古風直排'], ['letter', '✉️ 信箋'], ['ticket', '🎟️ 電影票根'],
+];
+
 async function makeShot(picked) {
     if (!picked.length) return;
     const modal = openModal('<div class="baozi-loading">📸 畫圖中…</div>');
@@ -542,14 +549,33 @@ async function makeShot(picked) {
         const character = currentCharacter();
         const prompt = activePrompt();
         const charName = items.find(i => !i.isUser)?.name || character || '';
-        const blob = await render(items, {
-            title: {
-                main: prompt ? `《${prompt.title}》` : (charName ? `和${charName}` : '包子club'),
-                sub: [charName && prompt ? `和${charName}` : '', today()].filter(Boolean).join(' · '),
-            },
-        });
+        const data = {
+            lines: items.filter(i => i.text).map(i => ({ who: i.isUser ? 'user' : 'char', name: i.name, text: i.text })),
+            images: items.flatMap(i => i.images),
+            title: prompt?.title || '',
+            charName,
+            userName: items.find(i => i.isUser)?.name || bot.me?.name || '',
+            date: new Date(),
+        };
+        // 每款排版都從同一份 data 畫；對話泡泡是原本那款
+        const draw = async (id) => {
+            if (id === 'bubble') {
+                return await render(items, {
+                    title: {
+                        main: prompt ? `《${prompt.title}》` : (charName ? `和${charName}` : '包子club'),
+                        sub: [charName && prompt ? `和${charName}` : '', today()].filter(Boolean).join(' · '),
+                    },
+                });
+            }
+            const { renderTemplate } = await import('./templates.js');
+            return await renderTemplate(id, data);
+        };
+        let tpl = 'bubble';
+        try { tpl = localStorage.getItem(TPL_KEY) || 'bubble'; } catch { /* 存不了就用預設 */ }
+        let blob;
+        try { blob = await draw(tpl); } catch (e) { console.warn('[包子同好會] 排版畫不出來，改用對話泡泡', e); tpl = 'bubble'; blob = await draw('bubble'); }
         if (!blob) throw new Error('畫不出來（手機記憶體不夠？少選幾則試試）');
-        showPreview(modal, [{ blob, kind: 'shot' }], { character, prompt });
+        showPreview(modal, [{ blob, kind: 'shot' }], { character, prompt, redraw: draw, template: tpl });
     } catch (e) {
         modal.querySelector('.baozi-shot-body').innerHTML = `<div class="baozi-error">${esc(e.message)}</div>`;
     }
@@ -633,12 +659,14 @@ function download(blob, name) {
     setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
-function showPreview(modal, items, { character, prompt }) {
+function showPreview(modal, items, { character, prompt, redraw = null, template = 'bubble' }) {
     const urls = items.map(i => URL.createObjectURL(i.blob));
     const body = modal.querySelector('.baozi-shot-body');
     const what = items[0].kind === 'shot' ? '截圖' : `${items.length} 張圖`;
     body.innerHTML = `
         <div class="baozi-shot-title">${items[0].kind === 'shot' ? '📸' : '🖼️'} ${what}</div>
+        ${redraw ? `<div class="baozi-tpl-chips">${TEMPLATE_LIST.map(([id, label]) =>
+            `<button class="baozi-tag-chip ${id === template ? 'active' : ''}" data-tpl="${id}">${label}</button>`).join('')}</div>` : ''}
         <div class="baozi-shot-preview">${urls.map(u => `<img src="${u}">`).join('')}</div>
         ${prompt ? `<div class="baozi-shot-meta">會附上：玩《<span data-raw>${esc(prompt.title)}</span>》${character ? `・${esc(character)}` : ''}<br>發到 DC 時也會貼到那則的論壇貼文底下</div>` : ''}
         <input type="text" class="baozi-search" data-f="caption" maxlength="300" placeholder="想說點什麼？（可以不寫）">
@@ -651,6 +679,27 @@ function showPreview(modal, items, { character, prompt }) {
         <div class="baozi-shot-status" data-k="status"></div>`;
     const status = body.querySelector('[data-k="status"]');
     body.addEventListener('click', async (ev) => {
+        const chip = ev.target.closest('[data-tpl]');
+        if (chip && redraw) {
+            body.querySelectorAll('[data-tpl]').forEach(c => c.classList.toggle('active', c === chip));
+            const img = body.querySelector('.baozi-shot-preview img');
+            img.style.opacity = '0.4';
+            status.innerHTML = '<span class="baozi-chat-spin"></span> 換排版中…';
+            try {
+                const blob = await redraw(chip.dataset.tpl);
+                URL.revokeObjectURL(urls[0]);
+                items[0] = { ...items[0], blob };
+                urls[0] = URL.createObjectURL(blob);
+                img.src = urls[0];
+                status.textContent = '';
+                try { localStorage.setItem(TPL_KEY, chip.dataset.tpl); } catch { /* 記不住就算了 */ }
+            } catch (e) {
+                status.textContent = '❌ ' + e.message;
+            } finally {
+                img.style.opacity = '';
+            }
+            return;
+        }
         const btn = ev.target.closest('[data-a]');
         if (!btn) return;
         const a = btn.dataset.a;

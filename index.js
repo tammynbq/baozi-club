@@ -11,6 +11,7 @@
 import {
     bot, isBotLoggedIn, botLogout, refreshMe, renderBotLoginScreen,
     renderLibraryScreen, renderChatScreen, closeChat,
+    rollDice, renderDiceSettings, DICE_EMPTY,
 } from './bot.js';
 
 const extensionName = "baozi-club";
@@ -872,6 +873,7 @@ function buildUI() {
         <div class="baozi-header" id="baozi-panel-header">
             <span class="baozi-logo">🥟 包子同好會</span>
             <span class="baozi-drag-hint">⋮⋮</span>
+            <span class="baozi-dice" id="baozi-dice" title="隨機抽一則">🎲</span>
             <span class="baozi-close" id="baozi-close">✕</span>
         </div>
         <div class="baozi-body" id="baozi-body">
@@ -888,6 +890,7 @@ function buildUI() {
 
     // 事件綁定
     panel.querySelector('#baozi-close').addEventListener('click', closePanel);
+    panel.querySelector('#baozi-dice').addEventListener('click', (ev) => { ev.stopPropagation(); onDice(); });
     overlay.addEventListener('click', closePanel);
 }
 
@@ -1032,7 +1035,7 @@ function makePanelDraggable(panel) {
 
     const onDown = (e) => {
         // 避免點到關閉按鈕時觸發
-        if (e.target.id === 'baozi-close' || e.target.closest('#baozi-close')) return;
+        if (e.target.closest('#baozi-close, #baozi-dice')) return;
 
         const point = e.touches ? e.touches[0] : e;
         startX = point.clientX;
@@ -1423,6 +1426,10 @@ function renderHomeScreen(container) {
     container.innerHTML = `
         <div class="baozi-home">
             <div class="baozi-greeting">你好，<b>${escapeHtml(state.nickname)}</b>～今天也辛苦啦 💕</div>
+            <button class="baozi-today-card" data-target="today">
+                <span class="baozi-today-icon">☀️</span>
+                <span><b>今日推薦</b><br><small>跟 Discord 早上那 10 則同一份</small></span>
+            </button>
             <div class="baozi-menu">
                 <button class="baozi-menu-btn" data-target="library">
                     <span class="baozi-menu-icon">📖</span>
@@ -1440,10 +1447,11 @@ function renderHomeScreen(container) {
         </div>
     `;
 
-    container.querySelectorAll('.baozi-menu-btn').forEach(btn => {
+    container.querySelectorAll('.baozi-menu-btn, .baozi-today-card').forEach(btn => {
         btn.addEventListener('click', () => {
             switch (btn.dataset.target) {
-                case 'library': openLibrary(container); break;
+                case 'today': openLibrary(container, { filter: 'today' }); break;
+                case 'library': openLibrary(container, { filter: 'all' }); break;
                 case 'chat': renderChatScreen(container, { back: () => renderHomeScreen(container) }); break;
                 case 'settings': renderSettingsScreen(container); break;
             }
@@ -1452,13 +1460,30 @@ function renderHomeScreen(container) {
 }
 
 
+// ---------- 🎲 骰子（標題列上那顆） ----------
+async function onDice() {
+    const panel = document.getElementById('baozi-panel');
+    if (!panel.classList.contains('baozi-open')) openPanel();
+    const body = document.getElementById('baozi-body');
+    if (!isBotLoggedIn()) { renderMainContent(); return; }
+    closeChat();
+    try {
+        const res = await rollDice();
+        if (!res.command) { alert(DICE_EMPTY); return; }
+        openLibrary(body, { pinned: res.command });
+    } catch (err) {
+        alert(err.message);
+    }
+}
+
+
 // ---------- 大包子指令庫 ----------
-function openLibrary(container) {
+function openLibrary(container, opts = {}) {
     const show = () => renderLibraryScreen(container, {
         back: () => renderHomeScreen(container),
-        showFull: showFullTextModal,
         copy: copyToClipboard,
-    });
+        closePanel,
+    }, opts);
     if (isBotLoggedIn()) {
         show();
         refreshMe().catch(() => { /* 舊的「我是誰」也能用，下次再更新 */ });
@@ -2285,6 +2310,10 @@ function renderSettingsScreen(container) {
                     <div><b>已登入：</b>${escapeHtml(bot.me?.name || '')}</div>
                     <div style="font-size:11px; opacity:.6; word-break:break-all;">${escapeHtml(bot.url)}</div>
                 </div>
+                <hr style="margin: 18px 0; border-color: rgba(0,0,0,0.1);">
+                <div class="baozi-setup-section-title">🎲 骰子</div>
+                <div id="baozi-dice-settings"></div>
+                <hr style="margin: 18px 0; border-color: rgba(0,0,0,0.1);">
                 <div class="baozi-setup-hint" style="margin-top:10px;">
                     舊的指令要搬過來：到 Discord 打 <b>/club 搬家</b>，大包子會自己去舊的 Firebase 讀，先給你看預覽。
                 </div>
@@ -2294,6 +2323,7 @@ function renderSettingsScreen(container) {
     `;
 
     document.getElementById('baozi-back').addEventListener('click', () => renderHomeScreen(container));
+    renderDiceSettings(document.getElementById('baozi-dice-settings'));
     document.getElementById('baozi-bot-logout').addEventListener('click', () => {
         if (confirm('登出？之後要到 Discord 打 /club 登入 重新拿碼。')) {
             botLogout();

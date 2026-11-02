@@ -1542,3 +1542,106 @@ a.baozi-btn-small {
     margin: 0;
     padding: 8px 14px;
 }
+
+/* ---------- 🎲 標題列的骰子 ---------- */
+.baozi-dice {
+    cursor: pointer;
+    font-size: 18px;
+    padding: 4px 6px;
+    border-radius: 50%;
+    transition: transform 0.2s;
+}
+.baozi-dice:hover { background: rgba(139, 90, 60, 0.1); }
+.baozi-dice:active { transform: rotate(90deg) scale(0.9); }
+.baozi-header .baozi-drag-hint + .baozi-dice + .baozi-close { margin-left: 2px; }
+
+/* ---------- ☀️ 首頁的今日推薦 ---------- */
+.baozi-today-card {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    width: 100%;
+    text-align: left;
+    padding: 16px 18px;
+    margin-bottom: 14px;
+    border: none;
+    border-radius: 18px;
+    background: linear-gradient(135deg, var(--baozi-yellow-light) 0%, var(--baozi-peach-light) 100%);
+    color: var(--baozi-brown);
+    font-family: inherit;
+    font-size: 15px;
+    cursor: pointer;
+    box-shadow: 0 3px 10px var(--baozi-shadow);
+}
+.baozi-today-card small { opacity: .75; font-size: 12px; }
+.baozi-today-icon { font-size: 30px; }
+
+/* ---------- 📖 指令庫：固定在上面的工具列 ---------- */
+.baozi-lib-sticky {
+    position: sticky;
+    top: -16px;              /* 抵掉 .baozi-body 的 padding，貼齊頂端 */
+    z-index: 5;
+    margin: -16px -16px 10px;
+    padding: 12px 16px 10px;
+    background: var(--baozi-cream);
+    border-bottom: 1px dashed var(--baozi-cream-dark);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.baozi-lib-sticky .baozi-screen-header { margin-bottom: 0; padding-bottom: 0; border-bottom: none; }
+
+.baozi-lib-chips {
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    padding-bottom: 2px;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+}
+.baozi-lib-chips::-webkit-scrollbar { display: none; }
+.baozi-lib-chips .baozi-tag-chip { flex-shrink: 0; white-space: nowrap; }
+
+/* ---------- 📖 指令庫：卡片原地展開 ---------- */
+.baozi-lib-head { cursor: pointer; }
+.baozi-lib-caret { font-size: 11px; opacity: .6; }
+.baozi-lib-detail { display: none; }
+.baozi-lib-card.open .baozi-lib-detail { display: block; }
+.baozi-lib-body {
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-size: 13px;
+    line-height: 1.65;
+    color: var(--baozi-brown);
+    background: var(--baozi-cream);
+    border-radius: 10px;
+    padding: 10px 12px;
+    margin: 6px 0 8px;
+    max-height: 50vh;
+    overflow-y: auto;
+}
+.baozi-lib-note { font-size: 12px; color: var(--baozi-brown-soft); margin-bottom: 8px; }
+.baozi-lib-badge {
+    display: inline-block;
+    font-size: 11px;
+    background: var(--baozi-yellow-light);
+    color: var(--baozi-brown);
+    border-radius: 999px;
+    padding: 0 7px;
+    margin-left: 4px;
+}
+.baozi-lib-card.pinned { border-color: var(--baozi-peach); }
+.baozi-lib-pinned {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-weight: 700;
+    color: var(--baozi-pink);
+    margin-bottom: 6px;
+}
+
+/* ---------- 設定裡的勾選 ---------- */
+.baozi-dice-pools { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 8px 0; }
+.baozi-check { display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; }
+.baozi-check input { width: auto; margin: 0; }

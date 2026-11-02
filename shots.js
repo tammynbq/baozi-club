@@ -180,12 +180,14 @@ function onChatClick(ev) {
 
 export function exitSelectMode() {
     selecting = false;
-    document.body.classList.remove('baozi-selecting');
-    document.querySelectorAll('#chat .baozi-sel-copy, #chat .baozi-sel-imgs, #chat .baozi-pick-all')
-        .forEach(el => el.remove());
-    for (const [el, display] of hidden) el.style.display = display;
-    hidden.length = 0;
-    document.querySelectorAll('#chat .baozi-picked').forEach(el => el.classList.remove('baozi-picked'));
+    keepScroll(() => {
+        document.body.classList.remove('baozi-selecting');
+        document.querySelectorAll('#chat .baozi-sel-copy, #chat .baozi-sel-imgs, #chat .baozi-pick-all')
+            .forEach(el => el.remove());
+        for (const [el, display] of hidden) el.style.display = display;
+        hidden.length = 0;
+        document.querySelectorAll('#chat .baozi-picked').forEach(el => el.classList.remove('baozi-picked'));
+    });
     document.removeEventListener('click', onChatClick, true);
     bar?.remove();
     bar = null;
@@ -228,6 +230,28 @@ function readSelection() {
     return out;
 }
 
+/**
+ * 做 fn 的時候，畫面停在原地不要動。
+ * 換成副本會讓每一樓的高度變一點點，酒館（或主題、其他插件）看到聊天的內容變了
+ * 還會自己捲到最底。所以先記住畫面中間是哪一樓、離畫面頂端多遠，做完再捲回來，
+ * 之後再補幾次（蓋掉酒館慢一拍的那次捲動）。
+ */
+function keepScroll(fn) {
+    const chat = document.getElementById('chat');
+    const anchor = currentFloor();
+    if (!chat || !anchor) { fn(); return; }
+    const before = anchor.getBoundingClientRect().top;
+    fn();
+    const fix = () => {
+        if (!document.body.contains(anchor)) return;
+        const delta = anchor.getBoundingClientRect().top - before;
+        if (Math.abs(delta) > 1) chat.scrollTop += delta;
+    };
+    fix();
+    requestAnimationFrame(fix);
+    [80, 250, 600].forEach(ms => setTimeout(fix, ms));
+}
+
 /** 畫面中間現在停著的那一樓。 */
 function currentFloor() {
     const mid = window.innerHeight / 2;
@@ -263,6 +287,7 @@ export function enterSelectMode() {
     if (selecting) return;
     if (!document.querySelector('#chat .mes')) { alert(t('先打開一個有對話的聊天～')); return; }
     selecting = true;
+    keepScroll(() => {
     document.body.classList.add('baozi-selecting');
     document.querySelectorAll('#chat .mes').forEach(mes => {
         const textEl = mes.querySelector('.mes_text:not(.baozi-sel-copy)');
@@ -286,6 +311,7 @@ export function enterSelectMode() {
             mes.appendChild(btn);
             localizeLive(btn);
         }
+    });
     });
     document.addEventListener('click', onChatClick, true);
     bar = document.createElement('div');
@@ -538,7 +564,7 @@ const TPL_KEY = 'baozi_shot_template';
 // 跟 templates.js 的 TEMPLATES 一樣（這裡寫一份，不用為了按鈕的字先把整個排版檔載進來）
 const TEMPLATE_LIST = [
     ['bubble', '💬 對話泡泡'], ['book', '📖 書頁摘抄'], ['polaroid', '📷 拍立得'], ['cinema', '🎬 電影字幕'],
-    ['ancient', '🏮 古風直排'], ['letter', '✉️ 信箋'], ['ticket', '🎟️ 電影票根'],
+    ['ancient', '🏮 古風直排'], ['letter', '✉️ 信箋'], ['ticket', '🎟️ 電影票根'], ['ai', '✨ 讓模型設計'],
 ];
 
 async function makeShot(picked) {
@@ -567,11 +593,19 @@ async function makeShot(picked) {
                     },
                 });
             }
-            const { renderTemplate } = await import('./templates.js');
+            const { renderTemplate, FONTS, TEMPLATES } = await import('./templates.js');
+            if (id === 'ai') {
+                const { design } = await import('./aidesign.js');
+                const d = await design(data, FONTS);
+                const name = TEMPLATES.find(([k]) => k === d.base)?.[1] || d.base;
+                draw.note = `✨ 模型選了${name}${d.title ? `・〈${d.title}〉` : ''}${d.why ? `：${d.why}` : ''}`;
+                return await renderTemplate(d.base, { ...data, title: d.title || data.title }, d.theme);
+            }
             return await renderTemplate(id, data);
         };
         let tpl = 'bubble';
         try { tpl = localStorage.getItem(TPL_KEY) || 'bubble'; } catch { /* 存不了就用預設 */ }
+        if (tpl === 'ai') tpl = 'bubble';   // 模型設計不當預設（每次截圖都叫模型太花錢）
         let blob;
         try { blob = await draw(tpl); } catch (e) { console.warn('[包子同好會] 排版畫不出來，改用對話泡泡', e); tpl = 'bubble'; blob = await draw('bubble'); }
         if (!blob) throw new Error('畫不出來（手機記憶體不夠？少選幾則試試）');
@@ -684,15 +718,19 @@ function showPreview(modal, items, { character, prompt, redraw = null, template 
             body.querySelectorAll('[data-tpl]').forEach(c => c.classList.toggle('active', c === chip));
             const img = body.querySelector('.baozi-shot-preview img');
             img.style.opacity = '0.4';
-            status.innerHTML = '<span class="baozi-chat-spin"></span> 換排版中…';
+            status.innerHTML = chip.dataset.tpl === 'ai'
+                ? '<span class="baozi-chat-spin"></span> 模型在想怎麼設計…（再按一次會換一款）'
+                : '<span class="baozi-chat-spin"></span> 換排版中…';
             try {
                 const blob = await redraw(chip.dataset.tpl);
                 URL.revokeObjectURL(urls[0]);
                 items[0] = { ...items[0], blob };
                 urls[0] = URL.createObjectURL(blob);
                 img.src = urls[0];
-                status.textContent = '';
-                try { localStorage.setItem(TPL_KEY, chip.dataset.tpl); } catch { /* 記不住就算了 */ }
+                status.textContent = chip.dataset.tpl === 'ai' ? (redraw.note || '') : '';
+                if (chip.dataset.tpl !== 'ai') {
+                    try { localStorage.setItem(TPL_KEY, chip.dataset.tpl); } catch { /* 記不住就算了 */ }
+                }
             } catch (e) {
                 status.textContent = '❌ ' + e.message;
             } finally {

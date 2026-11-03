@@ -652,11 +652,21 @@ async function makeShot(picked) {
             }
             const { renderTemplate, FONTS, TEMPLATES } = await import('./templates.js');
             if (id === 'ai') {
-                const { design } = await import('./aidesign.js');
-                const d = await design(data, FONTS);
-                const name = TEMPLATES.find(([k]) => k === d.base)?.[1] || d.base;
-                draw.note = `✨ 模型選了${name}${d.title ? `・〈${d.title}〉` : ''}${d.why ? `：${d.why}` : ''}`;
-                return await renderTemplate(d.base, { ...data, title: d.title || data.title }, d.theme);
+                // 模型自己做一張新的（HTML 卡片）；兩次都做壞才退回六款骨架
+                try {
+                    const { makeHtmlCard } = await import('./htmlcard.js');
+                    const card = await makeHtmlCard(data, draw.hint || '');
+                    draw.note = card.note;
+                    return card.blob;
+                } catch (e) {
+                    if (/還沒有設定自訂 API/.test(e.message)) throw e;
+                    console.warn('[包子同好會] 模型做的卡片不行，退回六款', e);
+                    const { design } = await import('./aidesign.js');
+                    const d = await design(data, FONTS);
+                    const name = TEMPLATES.find(([k]) => k === d.base)?.[1] || d.base;
+                    draw.note = `⚠️ 模型這次沒做好（${e.message}），先用${name}代替；再按一次會重做`;
+                    return await renderTemplate(d.base, { ...data, title: d.title || data.title }, d.theme);
+                }
             }
             return await renderTemplate(id, data);
         };
@@ -757,7 +767,8 @@ function showPreview(modal, items, { character, prompt, redraw = null, template 
     body.innerHTML = `
         <div class="baozi-shot-title">${items[0].kind === 'shot' ? '📸' : '🖼️'} ${what}</div>
         ${redraw ? `<div class="baozi-tpl-chips">${TEMPLATE_LIST.map(([id, label]) =>
-            `<button class="baozi-tag-chip ${id === template ? 'active' : ''}" data-tpl="${id}">${label}</button>`).join('')}</div>` : ''}
+            `<button class="baozi-tag-chip ${id === template ? 'active' : ''}" data-tpl="${id}">${label}</button>`).join('')}</div>
+            <input type="text" class="baozi-search baozi-ai-hint" data-f="hint" maxlength="80" placeholder="✨ 想要的感覺？例如：古風一點、像雜誌（可以不寫）">` : ''}
         <div class="baozi-shot-preview">${urls.map(u => `<img src="${u}">`).join('')}</div>
         ${prompt ? `<div class="baozi-shot-meta">會附上：玩《<span data-raw>${esc(prompt.title)}</span>》${character ? `・${esc(character)}` : ''}<br>發到 DC 時也會貼到那則的論壇貼文底下</div>` : ''}
         <input type="text" class="baozi-search" data-f="caption" maxlength="300" placeholder="想說點什麼？（可以不寫）">
@@ -772,11 +783,12 @@ function showPreview(modal, items, { character, prompt, redraw = null, template 
     body.addEventListener('click', async (ev) => {
         const chip = ev.target.closest('[data-tpl]');
         if (chip && redraw) {
+            if (chip.dataset.tpl === 'ai') redraw.hint = body.querySelector('[data-f="hint"]')?.value.trim() || '';
             body.querySelectorAll('[data-tpl]').forEach(c => c.classList.toggle('active', c === chip));
             const img = body.querySelector('.baozi-shot-preview img');
             img.style.opacity = '0.4';
             status.innerHTML = chip.dataset.tpl === 'ai'
-                ? '<span class="baozi-chat-spin"></span> 模型在想怎麼設計…（再按一次會換一款）'
+                ? '<span class="baozi-chat-spin"></span> 模型在設計新的排版…（大概 10～30 秒，好了再按一次會再做一款）'
                 : '<span class="baozi-chat-spin"></span> 換排版中…';
             try {
                 const blob = await redraw(chip.dataset.tpl);

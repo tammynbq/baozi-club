@@ -18,6 +18,7 @@ import { localizeLive, refreshLocale, t } from './i18n.js';
 import { enterSelectMode, renderAlbumScreen, renderFavsScreen } from './shots.js';
 import { renderDesktop } from './desktop.js';
 import { renderAiSettings } from './aidesign.js';
+import { mountMascot, greetIfNeeded, greetingEnabled, setGreetingEnabled } from './xiaobaozi.js';
 
 const extensionName = "baozi-club";
 const extensionFolderPath = `scripts/extensions/third-party/${extensionName}`;
@@ -2393,6 +2394,12 @@ function renderSettingsScreen(container) {
                     <div style="font-size:11px; opacity:.6; word-break:break-all;">${escapeHtml(bot.url)}</div>
                 </div>
                 <hr style="margin: 18px 0; border-color: rgba(0,0,0,0.1);">
+                <div class="baozi-setup-section-title">🥟 小包子</div>
+                <div class="baozi-dice-pools">
+                    <button class="baozi-tag-chip baozi-toggle-chip ${greetingEnabled() ? 'active' : ''}" id="xbz-greet-toggle">${greetingEnabled() ? '✓' : '○'} 每天第一次打開時出來打招呼</button>
+                    <button class="baozi-tag-chip" id="xbz-call">📣 現在叫他出來</button>
+                </div>
+                <hr style="margin: 18px 0; border-color: rgba(0,0,0,0.1);">
                 <div class="baozi-setup-section-title">🌈 主題</div>
                 <div class="baozi-dice-pools" id="baozi-theme-pick">
                     <button class="baozi-tag-chip ${currentTheme() === 'baozi' ? 'active' : ''}" data-theme="baozi">🥟 包子奶油</button>
@@ -2415,6 +2422,16 @@ function renderSettingsScreen(container) {
 
     document.getElementById('baozi-back').addEventListener('click', () => renderHomeScreen(container));
     renderDiceSettings(document.getElementById('baozi-dice-settings'));
+    document.getElementById('xbz-greet-toggle').addEventListener('click', (ev) => {
+        const on = !greetingEnabled();
+        setGreetingEnabled(on);
+        ev.currentTarget.classList.toggle('active', on);
+        ev.currentTarget.textContent = (on ? '✓' : '○') + ' 每天第一次打開時出來打招呼';
+    });
+    document.getElementById('xbz-call').addEventListener('click', () => {
+        closePanel();
+        greetIfNeeded({ force: true });
+    });
     document.getElementById('baozi-theme-pick').addEventListener('click', (ev) => {
         const chip = ev.target.closest('[data-theme]');
         if (!chip) return;
@@ -2860,6 +2877,7 @@ function makeModalDraggable(overlay) {
 
     buildUI();
     applyTheme();
+    mountMascot(document.getElementById('baozi-float-btn'));
 
     if (isBotLoggedIn()) {
         enterWithBot();
@@ -2868,5 +2886,6 @@ function makeModalDraggable(overlay) {
     }
     startNotifCheck();
     startAutoMark();
+    if (isBotLoggedIn()) setTimeout(() => greetIfNeeded().catch(e => console.warn('[包子同好會] 小包子打招呼失敗', e)), 1500);
     console.log('[包子同好會] 啟動完成 🥟');
 })();

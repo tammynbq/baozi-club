@@ -9,7 +9,7 @@
 // 鑰匙存在這支手機的 localStorage；大包子那邊只存它的指紋。
 // ============================================================
 
-import { t, localizeLive } from './i18n.js';
+import { t, localizeLive, toSimplified } from './i18n.js';
 
 const KEY_URL = 'baozi_bot_url';
 // 大包子在 Railway 的網址。寫死在這裡就不用每支手機自己填；
@@ -115,12 +115,37 @@ export function currentCardName() {
     return (char?.name || ctx.name2 || '').trim();
 }
 
-/** 卡上的名字 → 大包子用的名字；不是自己的老公就回空字串。 */
+// 卡名常常跟大包子那份不完全一樣：換了新版多個「v2」、加了 emoji、寫成繁體…
+// 所以比對前先去掉空白／符號、繁轉簡，對不上再看卡名裡有沒有「包含」某位老公。
+const NAME_TRAD = { 葉: '叶', 銜: '衔', 華: '华', 謝: '谢', 張: '张', 遠: '远' };
+
+function normName(s) {
+    return toSimplified(String(s || ''))
+        .replace(/[葉銜華謝張遠]/g, c => NAME_TRAD[c])
+        .replace(/[\s\p{P}\p{S}\p{Extended_Pictographic}\uFE0F\u200D]/gu, '')
+        .toLowerCase();
+}
+
+/** 任何一個卡名 → 自己的哪位老公；認不出來（或同時像兩位）就回空字串。 */
+export function matchCharacter(card) {
+    const mine = bot.me?.characters || [];
+    const keys = new Map();
+    for (const c of mine) keys.set(normName(c), c);
+    for (const [alias, c] of Object.entries(bot.me?.aliases || {})) {
+        if (mine.includes(c)) keys.set(normName(alias), c);
+    }
+    const key = normName(card);
+    if (!key) return '';
+    if (keys.has(key)) return keys.get(key);
+    // 「包含」只看兩個字以上的名字，免得一個字亂中
+    const hits = new Set([...keys].filter(([k]) => k.length >= 2 && key.includes(k)).map(([, c]) => c));
+    return hits.size === 1 ? [...hits][0] : '';
+}
+
+/** 現在開著的卡 → 大包子用的名字；不是自己的老公就回空字串。 */
 export function currentCharacter() {
     if (!bot.me) return '';
-    const card = currentCardName();
-    const name = bot.me.aliases?.[card] || card;
-    return (bot.me.characters || []).includes(name) ? name : '';
+    return matchCharacter(currentCardName());
 }
 
 
@@ -254,6 +279,16 @@ function friendName() {
     return bot.me?.friends?.[0]?.name || '朋友';
 }
 
+/** 認不出現在是哪位老公時：用下拉選「誰玩過」（選一次＝切換一次）。 */
+function usedPicker(cmd) {
+    const chars = bot.me?.characters || [];
+    if (!chars.length) return '';
+    return `<select class="baozi-btn-small baozi-used-pick" data-pick="used">
+        <option value="">☑️ 誰玩過…</option>
+        ${chars.map(c => `<option value="${esc(c)}">${cmd.characters.includes(c) ? '✅ ' : '　'}${esc(c)}</option>`).join('')}
+    </select>`;
+}
+
 function detailHtml(cmd, character) {
     const usedNow = character && cmd.characters.includes(character);
     return `
@@ -263,7 +298,8 @@ function detailHtml(cmd, character) {
         <div class="baozi-card-actions">
             <button class="baozi-btn-small baozi-on" data-a="play">▶️ 拿去玩</button>
             <button class="baozi-btn-small" data-a="copy">📋 複製</button>
-            ${character ? `<button class="baozi-btn-small ${usedNow ? 'baozi-on' : ''}" data-a="used">${usedNow ? '✅' : '☑️'} ${esc(character)}玩過</button>` : ''}
+            ${character ? `<button class="baozi-btn-small ${usedNow ? 'baozi-on' : ''}" data-a="used">${usedNow ? '✅' : '☑️'} ${esc(character)}玩過</button>`
+                : usedPicker(cmd)}
             <button class="baozi-btn-small ${cmd.status === 'saved' ? 'baozi-on' : ''}" data-a="saved">⭐</button>
             <button class="baozi-btn-small ${cmd.status === 'blocked' ? 'baozi-on' : ''}" data-a="blocked">🚫</button>
             <button class="baozi-btn-small" data-a="recommend">💌 推給${esc(friendName())}</button>
@@ -283,7 +319,11 @@ function detailHtml(cmd, character) {
 export async function renderLibraryScreen(container, ui, opts = {}) {
     const me = bot.me;
     const chars = me?.characters || [];
-    if (view.character === null) view.character = currentCharacter() || '';
+    // 每次打開都重新認一次（開著別的聊天時進來過，也不會一直卡在「沒有人」）；
+    // 認不到就留著她上次自己選的
+    const nowChar = currentCharacter();
+    if (nowChar) view.character = nowChar;
+    else if (view.character === null || !chars.includes(view.character)) view.character = '';
     if (opts.filter) view.filter = opts.filter;
 
     container.innerHTML = `
@@ -383,6 +423,38 @@ export async function renderLibraryScreen(container, ui, opts = {}) {
         return cmd;
     }
 
+    async function toggleUsed(cmd, who) {
+        const set = new Set(cmd.characters);
+        if (set.has(who)) set.delete(who);
+        else set.add(who);
+        const res = await botFetch(`/club/commands/${cmd.id}/used`, {
+            method: 'POST', body: { characters: [...set] },
+        });
+        cmd.characters = res.characters;
+        cmd.status = res.characters.length ? 'used' : null;
+        const nowUsed = view.character ? cmd.characters.includes(view.character) : cmd.characters.length > 0;
+        if ((view.filter === 'unplayed' && nowUsed) || (view.filter === 'played' && !nowUsed)) {
+            items = items.filter(c => c.id !== cmd.id);
+            isOpen.delete(cmd.id);
+        }
+        draw();
+    }
+
+    async function onPick(ev) {
+        const sel = ev.target.closest('select[data-pick="used"]');
+        if (!sel || !sel.value) return;
+        const cmd = findCmd(sel.closest('.baozi-lib-card')?.dataset.id);
+        if (!cmd) return;
+        sel.disabled = true;
+        try {
+            await toggleUsed(cmd, sel.value);
+        } catch (e) {
+            alert(t(e.message));
+            sel.disabled = false;
+            sel.value = '';
+        }
+    }
+
     async function onClick(ev) {
         const target = ev.target.closest('[data-a]');
         if (!target) return;
@@ -449,23 +521,9 @@ export async function renderLibraryScreen(container, ui, opts = {}) {
                     draw();
                     break;
                 }
-                case 'used': {
-                    const set = new Set(cmd.characters);
-                    if (set.has(view.character)) set.delete(view.character);
-                    else set.add(view.character);
-                    const res = await botFetch(`/club/commands/${cmd.id}/used`, {
-                        method: 'POST', body: { characters: [...set] },
-                    });
-                    cmd.characters = res.characters;
-                    cmd.status = res.characters.length ? 'used' : null;
-                    const nowUsed = cmd.characters.includes(view.character);
-                    if ((view.filter === 'unplayed' && nowUsed) || (view.filter === 'played' && !nowUsed)) {
-                        items = items.filter(c => c.id !== cmd.id);
-                        isOpen.delete(cmd.id);
-                    }
-                    draw();
+                case 'used':
+                    await toggleUsed(cmd, view.character);
                     break;
-                }
             }
         } catch (e) {
             alert(t(e.message));
@@ -485,6 +543,8 @@ export async function renderLibraryScreen(container, ui, opts = {}) {
 
     list.addEventListener('click', onClick);
     pinBox.addEventListener('click', onClick);
+    list.addEventListener('change', onPick);
+    pinBox.addEventListener('change', onPick);
 
     container.querySelectorAll('#baozi-lib-filters [data-f]').forEach(chip => {
         chip.addEventListener('click', () => {
@@ -531,6 +591,15 @@ const POOL_LABELS = [
     ['recommended', '💌 力推'],
 ];
 
+/** 「現在認到誰」：自動記玩過不動的時候，一看就知道是不是卡名對不上。 */
+export function recognizeLine() {
+    const card = currentCardName();
+    if (!card) return '現在沒開聊天。';
+    const who = currentCharacter();
+    return who ? `現在開著「<span data-raw>${esc(card)}</span>」→ 認得是 <b>${esc(who)}</b> ✓`
+        : `現在開著「<span data-raw>${esc(card)}</span>」→ 認不出是哪位老公，不會自動記（指令庫可以手動選）`;
+}
+
 /** 設定畫面裡的「🎲 骰子」那一塊。 */
 export async function renderDiceSettings(box) {
     box.innerHTML = '<div class="baozi-loading">載入中...</div>';
@@ -555,6 +624,7 @@ export async function renderDiceSettings(box) {
         <button class="baozi-tag-chip baozi-toggle-chip ${prefs.auto_mark ? 'active' : ''}" id="baozi-auto-mark">
             ${prefs.auto_mark ? '✓' : '○'} 送出小劇場指令時，自動記上玩過／問要不要存進包子
         </button>
+        <div class="baozi-setup-hint">${recognizeLine()}</div>
         <div class="baozi-setup-section-title" style="margin-top:16px;">🔔 通知</div>
         <button class="baozi-tag-chip baozi-toggle-chip ${prefs.notify_discord ? 'active' : ''}" id="baozi-notify-dc">
             ${prefs.notify_discord ? '✓' : '○'} 被力推時，大包子也在 Discord 私訊我

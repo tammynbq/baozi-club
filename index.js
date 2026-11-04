@@ -18,6 +18,7 @@ import { localizeLive, refreshLocale, t } from './i18n.js';
 import { enterSelectMode, renderAlbumScreen, renderFavsScreen } from './shots.js';
 import { renderDesktop } from './desktop.js';
 import { renderAiSettings } from './aidesign.js';
+import { installErrorCapture, renderReport } from './report.js';
 import { mountMascot, greetIfNeeded, greetingEnabled, setGreetingEnabled } from './xiaobaozi.js';
 
 const extensionName = "baozi-club";
@@ -2412,6 +2413,9 @@ function renderSettingsScreen(container) {
                 <div class="baozi-setup-section-title">✨ 排版模型（自訂 API）</div>
                 <div id="baozi-ai-settings"></div>
                 <hr style="margin: 18px 0; border-color: rgba(0,0,0,0.1);">
+                <div class="baozi-setup-section-title">🐞 回報問題</div>
+                <div id="baozi-report"></div>
+                <hr style="margin: 18px 0; border-color: rgba(0,0,0,0.1);">
                 <div class="baozi-setup-hint" style="margin-top:10px;">
                     舊的指令要搬過來：到 Discord 打 <b>/club 搬家</b>，大包子會自己去舊的 Firebase 讀，先給你看預覽。
                 </div>
@@ -2440,6 +2444,7 @@ function renderSettingsScreen(container) {
         document.querySelectorAll('#baozi-theme-pick [data-theme]').forEach(c => c.classList.toggle('active', c === chip));
     });
     renderAiSettings(document.getElementById('baozi-ai-settings'));
+    renderReport(document.getElementById('baozi-report'));
     document.getElementById('baozi-bot-logout').addEventListener('click', () => {
         if (confirm(t('登出？之後要到 Discord 打 /club 登入 重新拿碼。'))) {
             botLogout();
@@ -2885,6 +2890,7 @@ function makeModalDraggable(overlay) {
         updateExtStatus('✨ 點按鈕，用大包子的登入碼登入', 'ok');
     }
     startNotifCheck();
+    installErrorCapture();
     startAutoMark();
     if (isBotLoggedIn()) setTimeout(() => greetIfNeeded().catch(e => console.warn('[包子同好會] 小包子打招呼失敗', e)), 1500);
     console.log('[包子同好會] 啟動完成 🥟');

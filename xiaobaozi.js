@@ -11,6 +11,7 @@
 
 import { bot, botFetch, stContext, matchCharacter } from './bot.js';
 import { t, localizeLive } from './i18n.js';
+import { trace } from './report.js';
 
 function esc(str) {
     return String(str ?? '').replace(/[&<>"']/g, c => ({
@@ -192,9 +193,24 @@ function hello(name, d = new Date()) {
     return `${name}晚上好，今天辛苦了～`;
 }
 
+function describe(el) {
+    if (!el || el.nodeType !== 1) return String(el);
+    return el.tagName.toLowerCase() + (el.id ? '#' + el.id : '')
+        + (el.className && typeof el.className === 'string' ? '.' + el.className.trim().split(/\s+/).slice(0, 2).join('.') : '')
+        + (el.dataset?.a ? `[${el.dataset.a}]` : '');
+}
+
+let outsideHandler = null;
+
 export function closeBubble() {
+    if (document.getElementById('xbz-bubble')) trace('bubble close');
     document.getElementById('xbz-bubble')?.remove();
     document.getElementById('xbz-pop')?.remove();
+    if (outsideHandler) {
+        document.removeEventListener('touchstart', outsideHandler, true);
+        document.removeEventListener('mousedown', outsideHandler, true);
+        outsideHandler = null;
+    }
 }
 
 export function showBubble(html) {
@@ -209,6 +225,34 @@ export function showBubble(html) {
     bubble.innerHTML = html;
     document.body.append(pop, bubble);
     localizeLive(bubble);
+    trace('bubble show');
+
+    // iPhone：按鈕直接在 touchend 處理，不等它補發的 click（米米那邊泡泡按鈕按不動）
+    bubble.addEventListener('touchstart', (ev) => {
+        const p = ev.touches[0];
+        trace(`bubble touchstart ${describe(ev.target)} top=${describe(document.elementFromPoint(p.clientX, p.clientY))}`);
+    }, { passive: true });
+    bubble.addEventListener('touchend', (ev) => {
+        const btn = ev.target.closest('[data-a]');
+        trace(`bubble touchend ${describe(ev.target)}`);
+        if (!btn) return;
+        ev.preventDefault();          // 不要再補一個 click，免得按一下算兩下
+        btn.click();
+    });
+    bubble.addEventListener('click', (ev) => trace(`bubble click ${describe(ev.target)}`), true);
+
+    // 點泡泡以外的地方就收起來（小包子本身除外，他要能連戳）
+    outsideHandler = (ev) => {
+        const target = ev.target;
+        if (bubble.contains(target) || target.closest?.('#baozi-float-btn')) return;
+        trace(`outside ${ev.type} ${describe(target)} → close`);
+        closeBubble();
+    };
+    setTimeout(() => {
+        if (!document.body.contains(bubble)) return;
+        document.addEventListener('touchstart', outsideHandler, true);
+        document.addEventListener('mousedown', outsideHandler, true);
+    }, 0);
     return bubble;
 }
 

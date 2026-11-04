@@ -22,6 +22,7 @@ import { installErrorCapture, renderReport, openReportModal, trace } from './rep
 import { announceVersion, mountVersionChip } from './version.js';
 import { renderInboxScreen, inboxUnread } from './inbox.js';
 import { renderGameScreen, closeGame } from './game.js';
+import { renderShopScreen } from './shop.js';
 import { mountMascot, greetIfNeeded, greetingEnabled, setGreetingEnabled, pokeMascot, showBubble, closeBubble } from './xiaobaozi.js';
 
 const extensionName = "baozi-club";
@@ -1521,6 +1522,10 @@ function go(tab, opts = {}) {
             renderAlbumScreen(body, { back: () => renderHomeScreen(body), closePanel });
             break;
         case 'settings': setActiveTab('settings'); renderSettingsScreen(body); break;
+        case 'shop':
+            setActiveTab('');
+            renderShopScreen(body, { back: () => renderHomeScreen(body) });
+            break;
         case 'game':
             setActiveTab('');
             renderGameScreen(body, { back: () => renderHomeScreen(body) });

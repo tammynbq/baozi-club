@@ -98,54 +98,10 @@ async function snapshot() {
     };
 }
 
-// ---------- 截圖（html2canvas，放在插件資料夾裡，一帆不用連外網）----------
-
-let h2cLoading = null;
-function loadH2c() {
-    if (window.html2canvas) return Promise.resolve(window.html2canvas);
-    if (!h2cLoading) {
-        h2cLoading = new Promise((resolve, reject) => {
-            const tag = document.createElement('script');
-            tag.src = new URL('vendor/html2canvas.min.js', import.meta.url).href;
-            tag.onload = () => (window.html2canvas ? resolve(window.html2canvas) : reject(new Error('html2canvas 沒載入')));
-            tag.onerror = () => { h2cLoading = null; reject(new Error('html2canvas 載不到')); };
-            document.head.appendChild(tag);
-        });
-    }
-    return h2cLoading;
-}
-
-const withTimeout = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('截圖太久了')), ms))]);
-
 function canvasToBlob(canvas, type = 'image/jpeg', q = 0.85) {
     return new Promise((resolve, reject) => {
         try { canvas.toBlob(b => (b ? resolve(b) : reject(new Error('轉不成圖片'))), type, q); } catch (e) { reject(e); }
     });
-}
-
-/** 截現在看得到的畫面；失敗回 null（她可以改從相簿選）。 */
-export async function captureScreen() {
-    try {
-        const h2c = await withTimeout(loadH2c(), 8000);
-        const scale = Math.min(window.devicePixelRatio || 1, 2);
-        const canvas = await withTimeout(h2c(document.body, {
-            x: window.scrollX, y: window.scrollY, width: window.innerWidth, height: window.innerHeight,
-            windowWidth: window.innerWidth, windowHeight: window.innerHeight,
-            scale, useCORS: true, logging: false, backgroundColor: null,
-            ignoreElements: el => el.id === 'xbz-bubble' || el.id === 'xbz-pop' || el.classList?.contains('baozi-report-modal'),
-        }), 15000);
-        // 整張都是同一個顏色＝畫失敗了（iOS 偶爾會這樣）
-        const px = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
-        let same = true;
-        for (let i = 4; i < px.length && same; i += 4 * 997) {
-            if (px[i] !== px[0] || px[i + 1] !== px[1] || px[i + 2] !== px[2]) same = false;
-        }
-        if (same) return null;
-        return await canvasToBlob(canvas);
-    } catch (e) {
-        logError('capture', e);
-        return null;
-    }
 }
 
 /** 相簿選的圖：iPhone 可能是 HEIC，大包子不收 —— 用 canvas 重畫成 JPEG，順便縮到 1600 寬以內。 */
@@ -185,11 +141,10 @@ const MAX_IMAGES = 3;
 
 /**
  * 回報的表單（設定頁、小包子叫出來的視窗共用）。
- * @param images 一開始就附上的圖（小包子截的）
  * @param onDone 送出成功後
  */
-function reportForm(box, { images = [], onDone } = {}) {
-    const list = images.map(blob => ({ blob, url: URL.createObjectURL(blob) }));
+function reportForm(box, { onDone } = {}) {
+    const list = [];
     box.innerHTML = `
         <div class="baozi-setup-hint">哪裡怪怪的就寫一句，克總直接看得到。會一起帶上版本、現在開著的卡名和最近的錯誤訊息；附的圖只有克總看得到，30 天後刪掉。</div>
         <textarea class="baozi-search baozi-report-text" rows="3" maxlength="2000" placeholder="例如：一帆的自動標記沒反應、按了截圖畫面變白…"></textarea>
@@ -270,26 +225,26 @@ export function renderReport(box) {
     reportForm(box);
 }
 
-/** 小包子的「🐞 回報問題」：先截現在的畫面，再跳出回報視窗。 */
+/**
+ * 小包子的「🐞 回報問題」：直接跳出回報視窗。
+ * 不自動截圖 —— html2canvas 要把整頁酒館複製重畫，iPhone 上整個網頁會卡死（米米回報）。
+ */
 export async function openReportModal() {
-    const blob = await captureScreen();
     const modal = document.createElement('div');
     modal.className = 'baozi-shot-modal baozi-report-modal';
     modal.innerHTML = `
         <div class="baozi-shot-card">
             <div class="baozi-shot-title">🐞 回報問題</div>
-            ${blob ? '' : '<div class="baozi-setup-hint">這次沒截到畫面～可以先用手機截圖，再按「📷 從相簿選」</div>'}
+            <div class="baozi-setup-hint">要附畫面的話：先用手機截圖，再按「📷 從相簿選」</div>
             <div data-k="form"></div>
             <div class="baozi-shot-actions"><button class="baozi-btn-small" data-a="close">關掉</button></div>
         </div>`;
     document.body.appendChild(modal);
-    const text = reportForm(modal.querySelector('[data-k="form"]'), {
-        images: blob ? [blob] : [],
+    reportForm(modal.querySelector('[data-k="form"]'), {
         onDone: () => setTimeout(() => modal.remove(), 1800),
     });
     localizeLive(modal);
     modal.addEventListener('click', (ev) => {
         if (ev.target === modal || ev.target.closest('[data-a="close"]')) modal.remove();
     });
-    text.focus();
 }

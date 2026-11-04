@@ -147,6 +147,7 @@ function chatWidget(lines) {
 
 const APPS = [
     ['game', '🎮', '小世界', '#FFE3B3'],
+    ['shop', '🛍️', '商店', '#F7D4E6'],
     ['shot', '📸', '截圖', '#FFD6CE'],
     ['album', '🖼️', '相簿', '#E3D7F5'],
     ['dice', '🎲', '抽一則', '#C9E7DC'],
@@ -191,6 +192,7 @@ export async function renderDesktop(container, ui) {
         if (app === 'favs') ui.go('favs');
         if (app === 'inbox') ui.go('inbox');
         if (app === 'game') ui.go('game');
+        if (app === 'shop') ui.go('shop');
     };
 
     // 克總回信的紅點

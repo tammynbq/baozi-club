@@ -9,7 +9,7 @@
 // 造型是草稿第四版：不戴帽子的小籠包頭＋小太監的青色袍子。
 // ============================================================
 
-import { bot, botFetch, stContext } from './bot.js';
+import { bot, botFetch, stContext, matchCharacter } from './bot.js';
 import { t, localizeLive } from './i18n.js';
 
 function esc(str) {
@@ -182,12 +182,12 @@ function hello(name, d = new Date()) {
     return `${name}晚上好，今天辛苦了～`;
 }
 
-function closeBubble() {
+export function closeBubble() {
     document.getElementById('xbz-bubble')?.remove();
     document.getElementById('xbz-pop')?.remove();
 }
 
-function showBubble(html) {
+export function showBubble(html) {
     closeBubble();
     const pop = document.createElement('div');
     pop.id = 'xbz-pop';
@@ -276,11 +276,9 @@ function shuffle(list) {
 
 /** 大包子的角色名 → 酒館裡那張卡（卡上的名字可能不一樣：祂 = 柳玄、张文远 = 远子哥）。 */
 function findCard(name) {
-    const ctx = stContext();
-    const chars = ctx?.characters || [];
-    const aliases = bot.me?.aliases || {};
-    const want = new Set([name, ...Object.entries(aliases).filter(([, v]) => v === name).map(([k]) => k)]);
-    const idx = chars.findIndex(c => want.has((c?.name || '').trim()));
+    const chars = stContext()?.characters || [];
+    // 跟自動標記同一套比對：卡名多了 v2、emoji、寫成繁體也找得到
+    const idx = chars.findIndex(c => matchCharacter(c?.name || '') === name);
     return idx >= 0 ? idx : null;
 }
 

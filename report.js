@@ -10,6 +10,7 @@
 
 import { bot, botFetch, currentCardName, currentCharacter } from './bot.js';
 import { currentLocale, t } from './i18n.js';
+import { installedVersion } from './version.js';
 
 const LOG_KEY = 'baozi_errlog';
 const MAX_LOG = 20;
@@ -67,19 +68,9 @@ export function installErrorCapture() {
     };
 }
 
-let versionCache = null;
-async function version() {
-    if (versionCache) return versionCache;
-    try {
-        const res = await fetch(new URL('manifest.json', import.meta.url));
-        versionCache = (await res.json()).version || '?';
-    } catch { versionCache = '?'; }
-    return versionCache;
-}
-
 async function snapshot() {
     return {
-        version: await version(),
+        version: await installedVersion(),
         card: currentCardName(),
         recognized: currentCharacter(),
         characters: bot.me?.characters || [],

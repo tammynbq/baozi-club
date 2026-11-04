@@ -18,7 +18,7 @@ import { localizeLive, refreshLocale, t } from './i18n.js';
 import { enterSelectMode, renderAlbumScreen, renderFavsScreen } from './shots.js';
 import { renderDesktop } from './desktop.js';
 import { renderAiSettings } from './aidesign.js';
-import { installErrorCapture, renderReport, openReportModal } from './report.js';
+import { installErrorCapture, renderReport, openReportModal, trace } from './report.js';
 import { announceVersion, mountVersionChip } from './version.js';
 import { mountMascot, greetIfNeeded, greetingEnabled, setGreetingEnabled, pokeMascot } from './xiaobaozi.js';
 
@@ -868,6 +868,7 @@ function buildUI() {
     let tapTimer = null;
     makeDraggable(floatBtn, {
         onClick: () => {
+            trace(`float tap ${tapTimer ? 'second → open' : 'first'}`);
             if (tapTimer) {
                 clearTimeout(tapTimer);
                 tapTimer = null;
@@ -975,6 +976,7 @@ function makeDraggable(el, { onClick, saveKey } = {}) {
         document.removeEventListener('mouseup', onUp);
         document.removeEventListener('touchmove', onMove);
         document.removeEventListener('touchend', onUp);
+        document.removeEventListener('touchcancel', onCancel);
         el.classList.remove('baozi-dragging');
 
         if (!moved && onClick) {
@@ -1011,6 +1013,15 @@ function makeDraggable(el, { onClick, saveKey } = {}) {
         document.addEventListener('mouseup', onUp);
         document.addEventListener('touchmove', onMove, { passive: false });
         document.addEventListener('touchend', onUp);
+        document.addEventListener('touchcancel', onCancel);
+    };
+
+    // iOS 有時候不給 touchend、改給 touchcancel：不收掉的話 touchmove 監聽會一直掛著、擋住整頁捲動
+    const onCancel = () => {
+        trace('float touchcancel');
+        moved = true;                 // 當成沒點到
+        onUp();
+        document.removeEventListener('touchcancel', onCancel);
     };
 
     // 只在元素本身掛 down 事件；touchstart 用 passive 讓點擊/滾動維持流暢

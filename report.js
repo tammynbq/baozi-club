@@ -13,6 +13,8 @@ import { currentLocale, localizeLive, t } from './i18n.js';
 import { installedVersion } from './version.js';
 
 const LOG_KEY = 'baozi_errlog';
+const TRACE_KEY = 'baozi_trace';
+const MAX_TRACE = 40;
 const MAX_LOG = 20;
 const BASE = new URL('.', import.meta.url).href;
 
@@ -47,6 +49,20 @@ export function logError(where, err) {
     writeLog(list);
 }
 
+/** 記一筆操作軌跡（按了什麼、事件有沒有到），回報時一起帶上；iPhone 上的怪問題靠這個查。 */
+export function trace(msg) {
+    try {
+        const list = JSON.parse(localStorage.getItem(TRACE_KEY) || '[]');
+        const d = new Date();
+        list.push(`${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}.${String(d.getMilliseconds()).padStart(3, '0')} ${String(msg).slice(0, 160)}`);
+        localStorage.setItem(TRACE_KEY, JSON.stringify(list.slice(-MAX_TRACE)));
+    } catch { /* 存不了就算了 */ }
+}
+
+function readTrace() {
+    try { return JSON.parse(localStorage.getItem(TRACE_KEY) || '[]'); } catch { return []; }
+}
+
 const ours = (text) => String(text || '').includes(BASE);
 
 /** 開機時呼叫一次。 */
@@ -78,6 +94,7 @@ async function snapshot() {
         ua: navigator.userAgent,
         screen: `${window.innerWidth}×${window.innerHeight}@${window.devicePixelRatio || 1}`,
         errors: readLog(),
+        trace: readTrace(),
     };
 }
 
@@ -237,6 +254,7 @@ function reportForm(box, { images = [], onDone } = {}) {
             list.splice(0).forEach(it => URL.revokeObjectURL(it.url));
             drawImgs();
             writeLog([]);
+            try { localStorage.removeItem(TRACE_KEY); } catch { /* */ }
             onDone?.();
         } catch (e) {
             msg.textContent = '❌ ' + t(e.message);

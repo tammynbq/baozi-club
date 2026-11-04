@@ -2278,3 +2278,27 @@ select.baozi-used-pick { width: auto; max-width: 9em; padding-right: 4px; }
 .baozi-report-pick[hidden] { display: none; }
 .baozi-report-modal .baozi-shot-card { max-height: 86vh; overflow-y: auto; text-align: left; }
 .xbz-tip { font-size: 11px; opacity: .55; margin-top: 6px; }
+
+/* 📮 報告克總 */
+.bz-app > div { position: relative; }
+.bz-app-dot { position: absolute; top: -4px; right: -4px; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 9px;
+    background: #E8604C; color: #fff; font-size: 11px; line-height: 18px; text-align: center; box-sizing: border-box; }
+.bz-ib-new { margin: 6px 0 10px; }
+.bz-ib-new summary { cursor: pointer; font-weight: 600; padding: 6px 0; }
+.bz-ib-list { display: flex; flex-direction: column; gap: 10px; margin-top: 8px; }
+.bz-ib-thread { background: rgba(255,255,255,0.7); border-radius: 14px; padding: 10px 12px; }
+.bz-ib-head { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.bz-ib-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
+.bz-ib-thread.open .bz-ib-title { white-space: normal; }
+.bz-ib-dot { background: #E8604C; color: #fff; border-radius: 9px; font-size: 11px; padding: 0 6px; line-height: 18px; }
+.bz-ib-badge { font-size: 11px; padding: 1px 7px; border-radius: 9px; background: rgba(91,155,176,0.15); white-space: nowrap; }
+.bz-ib-badge.wait { background: rgba(232,183,122,0.25); }
+.bz-ib-badge.done { background: rgba(120,180,120,0.2); }
+.bz-ib-body { margin-top: 8px; display: flex; flex-direction: column; gap: 8px; }
+.bz-ib-msg { padding: 8px 10px; border-radius: 12px; font-size: 13px; line-height: 1.55; word-break: break-word; }
+.bz-ib-msg.me { background: rgba(232,183,122,0.18); align-self: flex-end; max-width: 88%; }
+.bz-ib-msg.claude { background: rgba(91,155,176,0.12); align-self: flex-start; max-width: 94%; }
+.bz-ib-who { font-size: 11px; opacity: .6; margin-bottom: 2px; }
+.bz-ib-text code { background: rgba(0,0,0,0.06); padding: 0 4px; border-radius: 4px; font-size: 12px; }
+.bz-ib-text pre { background: rgba(0,0,0,0.06); padding: 6px 8px; border-radius: 8px; overflow-x: auto; font-size: 12px; }
+.bz-ib-reply { margin-top: 4px; }

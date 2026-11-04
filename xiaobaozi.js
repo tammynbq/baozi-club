@@ -497,7 +497,7 @@ export async function pokeMascot(ui) {
         <div class="baozi-toast-row">
             <button class="baozi-btn-small baozi-on" data-a="open">🥟 打開包子</button>
             ${quick}
-            ${bot.me ? '<button class="baozi-btn-small" data-a="report">🐞 回報問題</button>' : ''}
+            ${bot.me ? '<button class="baozi-btn-small" data-a="report">📮 報告克總</button>' : ''}
         </div>
         <div class="xbz-tip">按兩下小包子也能直接打開</div>`);
     bubble.addEventListener('click', (ev) => {

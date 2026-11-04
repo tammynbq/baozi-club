@@ -112,7 +112,9 @@ export function currentCardName() {
     const ctx = stContext();
     if (!ctx) return '';
     const char = ctx.characters?.[ctx.characterId];
-    return (char?.name || ctx.name2 || '').trim();
+    const name = (char?.name || ctx.name2 || '').trim();
+    // 沒開聊天時（歡迎畫面）酒館的 name2 是系統的名字，不是角色
+    return /^SillyTavern System$/i.test(name) ? '' : name;
 }
 
 // 卡名常常跟大包子那份不完全一樣：換了新版多個「v2」、加了 emoji、寫成繁體…

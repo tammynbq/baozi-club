@@ -1537,9 +1537,29 @@ function go(tab, opts = {}) {
 }
 
 /** 克總回信了：小包子說一句（一次只說一句，有說就不打招呼）。 */
-async function announceInbox() {
+// 克總回信：開機看一次，之後每 3 分鐘、切回酒館時再看。
+// 有比上次多的未讀、小包子又剛好沒在說話，就讓他說一句（同樣的未讀不重複說）
+const INBOX_EVERY_MS = 3 * 60 * 1000;
+let inboxToldAbout = 0;
+
+async function pollInbox() {
+    if (!isBotLoggedIn()) return;
     const n = await inboxUnread();
+    if (n < inboxToldAbout) inboxToldAbout = n;           // 看過了，歸零重算
+    if (n <= inboxToldAbout) return;
+    if (document.getElementById('xbz-bubble') || document.querySelector('.bz-ib-list')) return;
+    await announceInbox(n);
+}
+
+function startInboxCheck() {
+    setInterval(() => pollInbox().catch(() => {}), INBOX_EVERY_MS);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) pollInbox().catch(() => {}); });
+}
+
+async function announceInbox(known) {
+    const n = known ?? await inboxUnread();
     if (!n) return false;
+    inboxToldAbout = n;
     const bubble = showBubble(`
         <div class="xbz-say">克總回你了～（${n} 則）</div>
         <div class="baozi-toast-row">
@@ -2952,6 +2972,7 @@ function makeModalDraggable(overlay) {
         updateExtStatus('✨ 點按鈕，用大包子的登入碼登入', 'ok');
     }
     startNotifCheck();
+    startInboxCheck();
     installErrorCapture();
     startAutoMark();
     // 小包子一次只說一句：有更新要講就先講更新，今天的招呼留到下次打開

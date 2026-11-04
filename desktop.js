@@ -8,6 +8,7 @@
 
 import { bot, botFetch } from './bot.js';
 import { t } from './i18n.js';
+import { inboxUnread } from './inbox.js';
 
 function esc(str) {
     return String(str ?? '').replace(/[&<>"']/g, c => ({
@@ -138,6 +139,7 @@ const APPS = [
     ['dice', '🎲', '抽一則', '#C9E7DC'],
     ['notifications', '🔔', '通知', '#FFE9A8'],
     ['favs', '⭐', '收藏', '#FFE1C9'],
+    ['inbox', '📮', '克總', '#D6E8F5'],
 ];
 
 let clockTimer = null;
@@ -174,7 +176,14 @@ export async function renderDesktop(container, ui) {
         if (app === 'dice') ui.dice();
         if (app === 'notifications') ui.notifications();
         if (app === 'favs') ui.go('favs');
+        if (app === 'inbox') ui.go('inbox');
     };
+
+    // 克總回信的紅點
+    inboxUnread().then(n => {
+        const icon = container.querySelector('[data-app="inbox"] > div');
+        if (icon && n) icon.insertAdjacentHTML('beforeend', `<span class="bz-app-dot">${n > 9 ? '9+' : n}</span>`);
+    });
 
     const grid = container.querySelector('#bz-grid');
     let data;

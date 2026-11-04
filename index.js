@@ -20,7 +20,8 @@ import { renderDesktop } from './desktop.js';
 import { renderAiSettings } from './aidesign.js';
 import { installErrorCapture, renderReport, openReportModal, trace } from './report.js';
 import { announceVersion, mountVersionChip } from './version.js';
-import { mountMascot, greetIfNeeded, greetingEnabled, setGreetingEnabled, pokeMascot } from './xiaobaozi.js';
+import { renderInboxScreen, inboxUnread } from './inbox.js';
+import { mountMascot, greetIfNeeded, greetingEnabled, setGreetingEnabled, pokeMascot, showBubble, closeBubble } from './xiaobaozi.js';
 
 const extensionName = "baozi-club";
 const extensionFolderPath = `scripts/extensions/third-party/${extensionName}`;
@@ -1518,11 +1519,33 @@ function go(tab, opts = {}) {
             renderAlbumScreen(body, { back: () => renderHomeScreen(body), closePanel });
             break;
         case 'settings': setActiveTab('settings'); renderSettingsScreen(body); break;
+        case 'inbox':
+            setActiveTab('');
+            renderInboxScreen(body, { back: () => renderHomeScreen(body) });
+            break;
         case 'favs':
             setActiveTab('');
             renderFavsScreen(body, { back: () => renderHomeScreen(body), copy: copyToClipboard });
             break;
     }
+}
+
+/** 克總回信了：小包子說一句（一次只說一句，有說就不打招呼）。 */
+async function announceInbox() {
+    const n = await inboxUnread();
+    if (!n) return false;
+    const bubble = showBubble(`
+        <div class="xbz-say">克總回你了～（${n} 則）</div>
+        <div class="baozi-toast-row">
+            <button class="baozi-btn-small baozi-on" data-a="go">📬 去看看</button>
+            <button class="baozi-btn-small" data-a="bye">等一下</button>
+        </div>`);
+    bubble.addEventListener('click', (ev) => {
+        const a = ev.target.closest('[data-a]')?.dataset.a;
+        if (a === 'bye') closeBubble();
+        if (a === 'go') { closeBubble(); openPanel(); go('inbox'); }
+    });
+    return true;
 }
 
 function renderHomeScreen(container) {
@@ -2444,7 +2467,8 @@ function renderSettingsScreen(container) {
                 <div class="baozi-setup-section-title">✨ 排版模型（自訂 API）</div>
                 <div id="baozi-ai-settings"></div>
                 <hr style="margin: 18px 0; border-color: rgba(0,0,0,0.1);">
-                <div class="baozi-setup-section-title">🐞 回報問題</div>
+                <div class="baozi-setup-section-title">📮 報告克總</div>
+                <button class="baozi-tag-chip" id="baozi-open-inbox" style="margin-bottom:8px;">📬 看信箱（克總的回覆）</button>
                 <div id="baozi-report"></div>
                 <hr style="margin: 18px 0; border-color: rgba(0,0,0,0.1);">
                 <div class="baozi-setup-hint" style="margin-top:10px;">
@@ -2476,6 +2500,7 @@ function renderSettingsScreen(container) {
     });
     renderAiSettings(document.getElementById('baozi-ai-settings'));
     renderReport(document.getElementById('baozi-report'));
+    document.getElementById('baozi-open-inbox').addEventListener('click', () => go('inbox'));
     document.getElementById('baozi-bot-logout').addEventListener('click', () => {
         if (confirm(t('登出？之後要到 Discord 打 /club 登入 重新拿碼。'))) {
             botLogout();
@@ -2928,6 +2953,7 @@ function makeModalDraggable(overlay) {
         setTimeout(async () => {
             try {
                 if (await announceVersion()) return;
+                if (await announceInbox()) return;
                 await greetIfNeeded();
             } catch (e) { console.warn('[包子同好會] 小包子打招呼失敗', e); }
         }, 1500);

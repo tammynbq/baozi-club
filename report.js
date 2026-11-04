@@ -139,20 +139,34 @@ async function uploadImage(blob) {
 
 const MAX_IMAGES = 3;
 
+const KIND_HINT = {
+    bug: ['哪裡怪怪的就寫一句。會一起帶上版本、現在開著的卡名和最近的錯誤訊息；附的圖只有克總看得到，30 天後刪掉。',
+        '例如：一帆的自動標記沒反應、按了截圖畫面變白…'],
+    ask: ['想問的、想要的新玩意都可以寫，克總會在信箱裡回你。', '例如：可以加個生日小組件嗎？／這個按鈕是做什麼的？'],
+};
+
 /**
- * 回報的表單（設定頁、小包子叫出來的視窗共用）。
- * @param onDone 送出成功後
+ * 寫給克總的表單（設定頁、信箱、小包子叫出來的視窗共用）。
+ * @param kind   一開始選哪種：bug（壞了）／ask（問問題、提點子）
+ * @param issue  有的話＝回覆這則（不分種類、不帶診斷資料）
+ * @param onDone 送出成功後（拿到大包子的回應）
  */
-function reportForm(box, { onDone } = {}) {
+export function reportForm(box, { kind = 'bug', issue = null, onDone } = {}) {
     const list = [];
+    const isReply = !!issue;
     box.innerHTML = `
-        <div class="baozi-setup-hint">哪裡怪怪的就寫一句，克總直接看得到。會一起帶上版本、現在開著的卡名和最近的錯誤訊息；附的圖只有克總看得到，30 天後刪掉。</div>
-        <textarea class="baozi-search baozi-report-text" rows="3" maxlength="2000" placeholder="例如：一帆的自動標記沒反應、按了截圖畫面變白…"></textarea>
+        ${isReply ? '' : `
+        <div class="baozi-dice-pools baozi-report-kinds">
+            <button class="baozi-tag-chip ${kind === 'bug' ? 'active' : ''}" data-kind="bug">🐞 有東西壞了</button>
+            <button class="baozi-tag-chip ${kind === 'ask' ? 'active' : ''}" data-kind="ask">💬 問問題／提點子</button>
+        </div>
+        <div class="baozi-setup-hint" data-k="hint">${KIND_HINT[kind][0]}</div>`}
+        <textarea class="baozi-search baozi-report-text" rows="3" maxlength="2000" placeholder="${isReply ? '回克總…' : KIND_HINT[kind][1]}"></textarea>
         <div class="baozi-report-imgs"></div>
         <div class="baozi-dice-pools">
-            <button class="baozi-tag-chip active" data-a="send">🐞 送出</button>
+            <button class="baozi-tag-chip active" data-a="send">📮 送出</button>
             <label class="baozi-tag-chip baozi-report-pick">📷 從相簿選<input type="file" accept="image/*" multiple hidden></label>
-            <button class="baozi-tag-chip" data-a="peek">看看會帶上什麼</button>
+            ${isReply ? '' : '<button class="baozi-tag-chip" data-a="peek">看看會帶上什麼</button>'}
         </div>
         <pre class="baozi-report-peek" data-raw hidden></pre>
         <div class="baozi-setup-hint" data-k="msg"></div>`;
@@ -161,6 +175,14 @@ function reportForm(box, { onDone } = {}) {
     const peek = box.querySelector('.baozi-report-peek');
     const imgs = box.querySelector('.baozi-report-imgs');
     const send = box.querySelector('[data-a="send"]');
+    box.querySelector('.baozi-report-kinds')?.addEventListener('click', (ev) => {
+        const chip = ev.target.closest('[data-kind]');
+        if (!chip) return;
+        kind = chip.dataset.kind;
+        box.querySelectorAll('[data-kind]').forEach(c => c.classList.toggle('active', c === chip));
+        box.querySelector('[data-k="hint"]').textContent = t(KIND_HINT[kind][0]);
+        text.placeholder = t(KIND_HINT[kind][1]);
+    });
 
     const drawImgs = () => {
         imgs.innerHTML = list.map((it, i) => `
@@ -186,13 +208,14 @@ function reportForm(box, { onDone } = {}) {
         ev.target.value = '';
         drawImgs();
     });
-    box.querySelector('[data-a="peek"]').onclick = async () => {
+    const peekBtn = box.querySelector('[data-a="peek"]');
+    if (peekBtn) peekBtn.onclick = async () => {
         peek.hidden = !peek.hidden;
         if (!peek.hidden) peek.textContent = JSON.stringify(await snapshot(), null, 1);
     };
     send.onclick = async () => {
         const words = text.value.trim();
-        if (!words) { msg.textContent = t('先寫一句發生了什麼～'); return; }
+        if (!words) { msg.textContent = t('先寫點什麼～'); return; }
         send.disabled = true;
         try {
             const shotIds = [];
@@ -201,16 +224,20 @@ function reportForm(box, { onDone } = {}) {
                 shotIds.push(await uploadImage(it.blob));
             }
             msg.textContent = t('送出中…');
-            const res = await botFetch('/club/report', {
-                method: 'POST', body: { text: words, shot_ids: shotIds, ...(await snapshot()) },
-            });
-            msg.innerHTML = t(`✓ 送出了（#${esc(res.number)}），跟克總說「看一下報錯」就好`);
+            const res = isReply
+                ? await botFetch(`/club/inbox/${issue}/reply`, { method: 'POST', body: { text: words, shot_ids: shotIds } })
+                : await botFetch('/club/report', {
+                    method: 'POST', body: { text: words, kind, shot_ids: shotIds, ...(await snapshot()) },
+                });
+            msg.innerHTML = t(isReply ? '✓ 回好了' : '✓ 送出了！克總回覆後會出現在「📮 克總」信箱裡（跟克總說「看一下信箱」）');
             text.value = '';
             list.splice(0).forEach(it => URL.revokeObjectURL(it.url));
             drawImgs();
-            writeLog([]);
-            try { localStorage.removeItem(TRACE_KEY); } catch { /* */ }
-            onDone?.();
+            if (!isReply) {
+                writeLog([]);
+                try { localStorage.removeItem(TRACE_KEY); } catch { /* */ }
+            }
+            onDone?.(res);
         } catch (e) {
             msg.textContent = '❌ ' + t(e.message);
         } finally {
@@ -220,7 +247,7 @@ function reportForm(box, { onDone } = {}) {
     return text;
 }
 
-/** 設定畫面裡的「🐞 回報問題」那一塊。 */
+/** 設定畫面裡的「📮 報告克總」那一塊。 */
 export function renderReport(box) {
     reportForm(box);
 }
@@ -234,7 +261,7 @@ export async function openReportModal() {
     modal.className = 'baozi-shot-modal baozi-report-modal';
     modal.innerHTML = `
         <div class="baozi-shot-card">
-            <div class="baozi-shot-title">🐞 回報問題</div>
+            <div class="baozi-shot-title">📮 報告克總</div>
             <div class="baozi-setup-hint">要附畫面的話：先用手機截圖，再按「📷 從相簿選」</div>
             <div data-k="form"></div>
             <div class="baozi-shot-actions"><button class="baozi-btn-small" data-a="close">關掉</button></div>

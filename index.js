@@ -21,6 +21,7 @@ import { renderAiSettings } from './aidesign.js';
 import { installErrorCapture, renderReport, openReportModal, trace } from './report.js';
 import { announceVersion, mountVersionChip } from './version.js';
 import { renderInboxScreen, inboxUnread } from './inbox.js';
+import { renderGameScreen, closeGame } from './game.js';
 import { mountMascot, greetIfNeeded, greetingEnabled, setGreetingEnabled, pokeMascot, showBubble, closeBubble } from './xiaobaozi.js';
 
 const extensionName = "baozi-club";
@@ -1506,6 +1507,7 @@ function go(tab, opts = {}) {
     const body = document.getElementById('baozi-body');
     if (!isBotLoggedIn()) { renderMainContent(); return; }
     closeChat();
+    closeGame();
     body.scrollTop = 0;
     switch (tab) {
         case 'home': renderHomeScreen(body); break;
@@ -1519,6 +1521,10 @@ function go(tab, opts = {}) {
             renderAlbumScreen(body, { back: () => renderHomeScreen(body), closePanel });
             break;
         case 'settings': setActiveTab('settings'); renderSettingsScreen(body); break;
+        case 'game':
+            setActiveTab('');
+            renderGameScreen(body, { back: () => renderHomeScreen(body) });
+            break;
         case 'inbox':
             setActiveTab('');
             renderInboxScreen(body, { back: () => renderHomeScreen(body) });

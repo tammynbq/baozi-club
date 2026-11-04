@@ -15,7 +15,7 @@ import re
 import opencc
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-SOURCES = [ROOT / "index.js", ROOT / "bot.js", ROOT / "shots.js", ROOT / "desktop.js", ROOT / "templates.js", ROOT / "aidesign.js", ROOT / "xiaobaozi.js", ROOT / "htmlcard.js", ROOT / "report.js", ROOT / "version.js", ROOT / "inbox.js", ROOT / "changelog.json",
+SOURCES = [ROOT / "index.js", ROOT / "bot.js", ROOT / "shots.js", ROOT / "desktop.js", ROOT / "templates.js", ROOT / "aidesign.js", ROOT / "xiaobaozi.js", ROOT / "htmlcard.js", ROOT / "report.js", ROOT / "version.js", ROOT / "inbox.js", ROOT / "game.js", ROOT / "changelog.json",
            ROOT.parent / "BIG-baozi" / "club" / "api.py",
            ROOT.parent / "BIG-baozi" / "club" / "chat.py",
            ROOT.parent / "BIG-baozi" / "club" / "shots.py",

@@ -2184,6 +2184,7 @@ body.baozi-theme-st .baozi-btn-primary {
 #baozi-float-btn.baozi-has-notif::after { top: 2px; right: 6px; }
 
 .xbz-pop {
+    pointer-events: none;   /* 蒸籠只是裝飾，別擋住後面的小包子（連戳要戳得到） */
     position: fixed;
     right: 14px;
     bottom: 96px;
@@ -2266,3 +2267,14 @@ select.baozi-used-pick { width: auto; max-width: 9em; padding-right: 4px; }
 .baozi-ver-entry ul { margin: 4px 0 0; padding-left: 18px; font-size: 13px; line-height: 1.5; }
 .baozi-ver-sep { margin: 12px 0 4px; font-size: 11px; opacity: .55; border-top: 1px dashed rgba(0,0,0,0.15); padding-top: 8px; }
 .baozi-ver-older summary { font-size: 12px; opacity: .65; cursor: pointer; margin-top: 6px; }
+
+/* 🐞 回報附圖 */
+.baozi-report-imgs { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 6px; }
+.baozi-report-img { position: relative; width: 72px; height: 96px; border-radius: 8px; overflow: hidden; background: rgba(0,0,0,0.06); }
+.baozi-report-img img { width: 100%; height: 100%; object-fit: cover; }
+.baozi-report-img button { position: absolute; top: 2px; right: 2px; width: 22px; height: 22px; border: none; border-radius: 50%;
+    background: rgba(0,0,0,0.55); color: #fff; font-size: 12px; line-height: 22px; padding: 0; cursor: pointer; }
+.baozi-report-pick { cursor: pointer; }
+.baozi-report-pick[hidden] { display: none; }
+.baozi-report-modal .baozi-shot-card { max-height: 86vh; overflow-y: auto; text-align: left; }
+.xbz-tip { font-size: 11px; opacity: .55; margin-top: 6px; }

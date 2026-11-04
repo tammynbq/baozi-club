@@ -18,9 +18,9 @@ import { localizeLive, refreshLocale, t } from './i18n.js';
 import { enterSelectMode, renderAlbumScreen, renderFavsScreen } from './shots.js';
 import { renderDesktop } from './desktop.js';
 import { renderAiSettings } from './aidesign.js';
-import { installErrorCapture, renderReport } from './report.js';
+import { installErrorCapture, renderReport, openReportModal } from './report.js';
 import { announceVersion, mountVersionChip } from './version.js';
-import { mountMascot, greetIfNeeded, greetingEnabled, setGreetingEnabled } from './xiaobaozi.js';
+import { mountMascot, greetIfNeeded, greetingEnabled, setGreetingEnabled, pokeMascot } from './xiaobaozi.js';
 
 const extensionName = "baozi-club";
 const extensionFolderPath = `scripts/extensions/third-party/${extensionName}`;
@@ -864,8 +864,22 @@ function buildUI() {
     restoreFloatBtnPosition(floatBtn);
 
     // 讓按鈕可拖曳（同時保留點擊功能）
+    // 按一下＝小包子說話；按兩下＝打開包子（等 0.28 秒看有沒有第二下）
+    let tapTimer = null;
     makeDraggable(floatBtn, {
-        onClick: openPanel,
+        onClick: () => {
+            if (tapTimer) {
+                clearTimeout(tapTimer);
+                tapTimer = null;
+                openPanel();
+                return;
+            }
+            tapTimer = setTimeout(() => {
+                tapTimer = null;
+                pokeMascot({ openPanel, report: () => openReportModal().catch(e => alert(e.message)) })
+                    .catch(e => console.warn('[包子同好會] 小包子說話失敗', e));
+            }, 280);
+        },
         saveKey: 'baozi_float_btn_pos',
     });
 
@@ -976,7 +990,11 @@ function makeDraggable(el, { onClick, saveKey } = {}) {
         }
     };
 
+    let lastTouch = 0;
     const onDown = (e) => {
+        // 手機點一下會先 touchstart、再補一個假的 mousedown —— 不擋掉的話一下會算成兩下
+        if (e.touches) lastTouch = Date.now();
+        else if (Date.now() - lastTouch < 800) return;
         // 取得觸控或滑鼠的座標
         const point = e.touches ? e.touches[0] : e;
         startX = point.clientX;

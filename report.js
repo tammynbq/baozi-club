@@ -125,8 +125,10 @@ async function normalizeImage(file) {
     }
 }
 
-async function uploadImage(blob) {
-    const res = await fetch(bot.url + '/club/shots?kind=report', {
+async function uploadImage(blob, caption = '') {
+    const q = new URLSearchParams({ kind: 'report' });
+    if (caption) q.set('caption', caption);
+    const res = await fetch(bot.url + '/club/shots?' + q, {
         method: 'POST',
         headers: { Authorization: 'Bearer ' + bot.token, 'Content-Type': blob.type || 'image/jpeg' },
         body: blob,
@@ -138,6 +140,16 @@ async function uploadImage(blob) {
 }
 
 const MAX_IMAGES = 3;
+const MAX_CARD_BYTES = 10 * 1024 * 1024;
+
+/** 酒館角色卡的設定藏在 PNG 的 tEXt 區塊（chara／ccv3）；相簿壓過的卡就沒有了。 */
+async function looksLikeCard(file) {
+    const buf = new Uint8Array(await file.arrayBuffer());
+    const sig = [0x89, 0x50, 0x4e, 0x47];
+    if (!sig.every((b, i) => buf[i] === b)) return false;
+    const text = new TextDecoder('latin1').decode(buf.subarray(0, Math.min(buf.length, 4 * 1024 * 1024)));
+    return /tEXt(chara|ccv3)\0/.test(text) || /iTXt(chara|ccv3)\0/.test(text);
+}
 
 const KIND_HINT = {
     bug: ['哪裡怪怪的就寫一句。會一起帶上版本、現在開著的卡名和最近的錯誤訊息；附的圖只有克總看得到，30 天後刪掉。',
@@ -166,6 +178,7 @@ export function reportForm(box, { kind = 'bug', issue = null, onDone } = {}) {
         <div class="baozi-dice-pools">
             <button class="baozi-tag-chip active" data-a="send">📮 送出</button>
             <label class="baozi-tag-chip baozi-report-pick">📷 從相簿選<input type="file" accept="image/*" multiple hidden></label>
+            <label class="baozi-tag-chip baozi-report-card">🎴 附角色卡<input type="file" accept=".png,image/png" hidden></label>
             ${isReply ? '' : '<button class="baozi-tag-chip" data-a="peek">看看會帶上什麼</button>'}
         </div>
         <pre class="baozi-report-peek" data-raw hidden></pre>
@@ -186,8 +199,9 @@ export function reportForm(box, { kind = 'bug', issue = null, onDone } = {}) {
 
     const drawImgs = () => {
         imgs.innerHTML = list.map((it, i) => `
-            <div class="baozi-report-img"><img src="${it.url}" alt=""><button data-del="${i}">✕</button></div>`).join('');
+            <div class="baozi-report-img ${it.card ? 'card' : ''}"><img src="${it.url}" alt="">${it.card ? '<span>🎴 角色卡</span>' : ''}<button data-del="${i}">✕</button></div>`).join('');
         box.querySelector('.baozi-report-pick').hidden = list.length >= MAX_IMAGES;
+        box.querySelector('.baozi-report-card').hidden = list.length >= MAX_IMAGES;
     };
     drawImgs();
 
@@ -208,6 +222,20 @@ export function reportForm(box, { kind = 'bug', issue = null, onDone } = {}) {
         ev.target.value = '';
         drawImgs();
     });
+    // 角色卡：原檔照傳，不重畫（重畫會把卡裡的設定弄丟）
+    box.querySelector('.baozi-report-card input').addEventListener('change', async (ev) => {
+        const file = ev.target.files[0];
+        ev.target.value = '';
+        if (!file) return;
+        if (file.size > MAX_CARD_BYTES) { msg.textContent = t('❌ 這張卡太大了（上限 10MB）'); return; }
+        if (!(await looksLikeCard(file))) {
+            msg.textContent = t('❌ 這張圖裡沒有角色設定。從相簿選的卡常常被壓過，請改從「檔案」選原本的 PNG');
+            return;
+        }
+        list.push({ blob: new Blob([file], { type: 'image/png' }), url: URL.createObjectURL(file), card: true });
+        msg.textContent = t('✓ 角色卡附上了');
+        drawImgs();
+    });
     const peekBtn = box.querySelector('[data-a="peek"]');
     if (peekBtn) peekBtn.onclick = async () => {
         peek.hidden = !peek.hidden;
@@ -221,7 +249,7 @@ export function reportForm(box, { kind = 'bug', issue = null, onDone } = {}) {
             const shotIds = [];
             for (const [i, it] of list.entries()) {
                 msg.textContent = t(`傳圖中（${i + 1}/${list.length}）…`);
-                shotIds.push(await uploadImage(it.blob));
+                shotIds.push(await uploadImage(it.blob, it.card ? '角色卡' : ''));
             }
             msg.textContent = t('送出中…');
             const res = isReply

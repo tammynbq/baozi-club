@@ -2313,3 +2313,6 @@ select.baozi-used-pick { width: auto; max-width: 9em; padding-right: 4px; }
 /* 🥟 包子幣小組件 */
 .bz-wallet .bz-checkin { margin-top: 6px; }
 .bz-plus { color: #E8604C; font-weight: 700; animation: baozi-toast-in .3s ease-out both; }
+.baozi-report-img.card span { position: absolute; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.55); color: #fff;
+    font-size: 10px; text-align: center; padding: 2px 0; }
+.baozi-report-card[hidden] { display: none; }

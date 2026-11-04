@@ -19,6 +19,7 @@ import { enterSelectMode, renderAlbumScreen, renderFavsScreen } from './shots.js
 import { renderDesktop } from './desktop.js';
 import { renderAiSettings } from './aidesign.js';
 import { installErrorCapture, renderReport } from './report.js';
+import { announceVersion, mountVersionChip } from './version.js';
 import { mountMascot, greetIfNeeded, greetingEnabled, setGreetingEnabled } from './xiaobaozi.js';
 
 const extensionName = "baozi-club";
@@ -897,6 +898,7 @@ function buildUI() {
     `;
     document.body.appendChild(panel);
     localizeLive(panel);
+    mountVersionChip(panel.querySelector('#baozi-panel-header')).catch(e => console.warn('[包子同好會] 版本號', e));
     localizeLive(floatBtn);
 
     // 恢復之前儲存的面板位置（只在桌面版，手機版每次都置中）
@@ -2892,6 +2894,14 @@ function makeModalDraggable(overlay) {
     startNotifCheck();
     installErrorCapture();
     startAutoMark();
-    if (isBotLoggedIn()) setTimeout(() => greetIfNeeded().catch(e => console.warn('[包子同好會] 小包子打招呼失敗', e)), 1500);
+    // 小包子一次只說一句：有更新要講就先講更新，今天的招呼留到下次打開
+    if (isBotLoggedIn()) {
+        setTimeout(async () => {
+            try {
+                if (await announceVersion()) return;
+                await greetIfNeeded();
+            } catch (e) { console.warn('[包子同好會] 小包子打招呼失敗', e); }
+        }, 1500);
+    }
     console.log('[包子同好會] 啟動完成 🥟');
 })();

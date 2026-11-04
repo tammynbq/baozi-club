@@ -2251,3 +2251,18 @@ body.baozi-theme-st .baozi-btn-primary {
 .baozi-report-peek { max-height: 220px; overflow: auto; font-size: 11px; white-space: pre-wrap; word-break: break-all;
     background: rgba(0,0,0,0.05); border-radius: 8px; padding: 8px; }
 select.baozi-used-pick { width: auto; max-width: 9em; padding-right: 4px; }
+
+/* 🏷️ 版本號 */
+.baozi-ver { margin-left: 6px; padding: 1px 7px; border: none; border-radius: 10px; font-size: 11px; line-height: 18px;
+    background: rgba(0,0,0,0.07); color: inherit; opacity: .75; cursor: pointer; position: relative; vertical-align: middle; }
+.baozi-ver.has-new { opacity: 1; }
+.baozi-ver.has-new::after { content: ''; position: absolute; top: -2px; right: -2px; width: 7px; height: 7px;
+    border-radius: 50%; background: #E8604C; }
+.baozi-ver-card { max-height: 80vh; overflow-y: auto; text-align: left; }
+.baozi-ver-new { background: rgba(232,96,76,0.1); border-radius: 10px; padding: 8px 10px; margin: 6px 0 10px; font-size: 13px; }
+.baozi-ver-entry { margin: 8px 0; }
+.baozi-ver-head { display: flex; justify-content: space-between; font-size: 13px; }
+.baozi-ver-head span { opacity: .55; font-size: 11px; }
+.baozi-ver-entry ul { margin: 4px 0 0; padding-left: 18px; font-size: 13px; line-height: 1.5; }
+.baozi-ver-sep { margin: 12px 0 4px; font-size: 11px; opacity: .55; border-top: 1px dashed rgba(0,0,0,0.15); padding-top: 8px; }
+.baozi-ver-older summary { font-size: 12px; opacity: .65; cursor: pointer; margin-top: 6px; }

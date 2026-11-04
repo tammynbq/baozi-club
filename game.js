@@ -30,6 +30,15 @@ export function renderGameScreen(container, ui) {
             <iframe class="baozi-game-frame" src="${src}" title="小小世界"></iframe>
         </div>`;
     const frame = container.querySelector('iframe');
+    // 鑰匙用 postMessage 給遊戲（不放網址，免得留在紀錄裡）；遊戲用它讀寫包子幣錢包
+    const origin = new URL(bot.url).origin;
+    const sendKey = () => frame.contentWindow?.postMessage({ type: 'baozi-auth', token: bot.token }, origin);
+    frame.addEventListener('load', sendKey);
+    const onReady = (ev) => {
+        if (!document.body.contains(frame)) { window.removeEventListener('message', onReady); return; }
+        if (ev.source === frame.contentWindow && ev.data?.type === 'baozi-game-ready') sendKey();
+    };
+    window.addEventListener('message', onReady);
     container.querySelector('.baozi-game').addEventListener('click', (ev) => {
         const a = ev.target.closest('[data-a]')?.dataset.a;
         if (a === 'back') { closeGame(); ui.back(); }

@@ -2309,3 +2309,7 @@ select.baozi-used-pick { width: auto; max-width: 9em; padding-right: 4px; }
 .baozi-game .baozi-screen-header { padding: 8px 12px 6px; margin: 0; }
 .baozi-game-reload { margin-left: auto; }
 .baozi-game-frame { flex: 1 1 auto; min-height: 0; width: 100%; border: 0; display: block; background: #f6efe2; }
+
+/* 🥟 包子幣小組件 */
+.bz-wallet .bz-checkin { margin-top: 6px; }
+.bz-plus { color: #E8604C; font-weight: 700; animation: baozi-toast-in .3s ease-out both; }

@@ -112,6 +112,18 @@ function pickWidget(p) {
         </div>`;
 }
 
+function walletWidget(w) {
+    if (!w) return '';
+    return `
+        <div class="bz-w bz-wallet">
+            <div class="bz-t">🥟 包子幣</div>
+            <div class="bz-big">${w.coins}</div>
+            <div class="bz-sub">${w.streak ? `連續簽到 ${w.streak} 天` : '還沒開始連續簽到'}</div>
+            ${w.checked_in ? '<div class="bz-sub">今天簽過了 ✓</div>'
+                : '<button class="baozi-btn-small baozi-on bz-checkin" data-checkin>✍️ 簽到</button>'}
+        </div>`;
+}
+
 function festivalWidget(f) {
     if (!f) return '';
     const when = f.days === 0 ? '就是今天！' : f.days === 1 ? '明天' : `還有 ${f.days} 天`;
@@ -202,6 +214,7 @@ export async function renderDesktop(container, ui) {
     // 老公此刻：多位的話，挑最近有動靜的那位當主角
     const ranked = [...husbands].sort((a, b) => (a.activity ? 0 : 1) - (b.activity ? 0 : 1));
     let main = ranked[0];
+    let wallet = null;
 
     const draw = () => {
         grid.innerHTML = [
@@ -210,13 +223,32 @@ export async function renderDesktop(container, ui) {
             husbandWidget(main),
             crewWidget(husbands, main?.name),
             pickWidget(data.pick),
+            walletWidget(wallet),
             festivalWidget(data.festival),
             chatWidget(data.chat),
         ].join('');
     };
     draw();
+    botFetch('/club/wallet').then(w => { wallet = w; if (document.body.contains(grid)) draw(); }).catch(() => {});
 
     grid.onclick = async (ev) => {
+        const ck = ev.target.closest('[data-checkin]');
+        if (ck) {
+            ck.disabled = true;
+            try {
+                const res = await botFetch('/club/wallet/checkin', { method: 'POST', body: { where: '包子club' } });
+                wallet = res;
+                draw();
+                if (res.ok) {
+                    const box = grid.querySelector('.bz-wallet .bz-t');
+                    if (box) box.insertAdjacentHTML('beforeend', ` <span class="bz-plus">＋${res.pay}${res.stamps === 7 ? ' 🎉' : ''}</span>`);
+                }
+            } catch (e) {
+                ck.disabled = false;
+                alert(t(e.message));
+            }
+            return;
+        }
         const pickH = ev.target.closest('[data-pick-husband]');
         if (pickH) {
             main = husbands.find(h => h.name === pickH.dataset.pickHusband) || main;

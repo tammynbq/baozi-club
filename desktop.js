@@ -1,8 +1,8 @@
 // ============================================================
 // 🏠 桌面（club 的首頁）
 // ============================================================
-// 時鐘、日期、農曆，下面一格一格的小組件：天氣、老公此刻、這個月、
-// 今日推薦／力推、下一個節日、聊天室最新兩句；再下面是常用的 App 圖示。
+// 最上面「今天」總覽卡：時鐘、日期農曆、天氣，下面一排小格子（明天、包子幣、下一個節日）；
+// 接著是常用的 App 圖示（不用滑到底）；再下面是老公此刻、今日推薦／力推、這個月、聊天室最新兩句。
 // 資料一次跟大包子要（GET /club/desktop），每一塊各自讀不到也不影響其他塊。
 // ============================================================
 
@@ -41,16 +41,33 @@ function dateText(d, lunar) {
 
 const deg = (n) => (n === null || n === undefined ? '–' : `${Math.round(n)}°`);
 
-function weatherWidget(w) {
-    if (!w) return `<div class="bz-w bz-weather"><div class="bz-t">天氣</div><div class="bz-sub">暫時查不到</div></div>`;
-    const tm = w.tomorrow ? `明天 ${deg(w.tomorrow.low)}–${deg(w.tomorrow.high)}` : '';
+// ── ☀️「今天」總覽卡：時鐘＋日期農曆＋天氣，下面一排小格子（明天、包子幣、下一個節日） ──
+// 時鐘先畫出來；天氣、格子等資料回來再填（#bz-wx、#bz-chips）。
+
+function weatherBlock(w) {
+    if (!w) return '<div class="bz-sub">天氣暫時查不到</div>';
     return `
-        <div class="bz-w bz-weather">
-            <div class="bz-t">${skyIcon(w.sky)} ${esc(w.city)}</div>
-            <div class="bz-deg">${deg(w.now ?? w.high)}</div>
-            <div class="bz-sub">${esc(w.sky)} · ${tm}</div>
-            ${w.tip ? `<div class="bz-sub">${esc(w.tip)}</div>` : ''}
-        </div>`;
+        <div class="bz-wx-icon">${skyIcon(w.sky)}</div>
+        <div class="bz-wx-deg">${deg(w.now ?? w.high)}</div>
+        <div class="bz-wx-sub">${esc(w.city)} · ${esc(w.sky)}</div>`;
+}
+
+function chipsBlock(data, wallet) {
+    const chips = [];
+    const tm = data.weather?.tomorrow;
+    if (tm) chips.push(`<div class="bz-chip bz-chip-sky">明天<b>${deg(tm.low)}–${deg(tm.high)}</b></div>`);
+    if (wallet) {
+        chips.push(wallet.checked_in
+            ? `<div class="bz-chip bz-chip-coin" data-app="shop">🥟 包子幣<b>${wallet.coins} ✓</b></div>`
+            : `<div class="bz-chip bz-chip-coin bz-chip-go" data-checkin>🥟 ${wallet.coins}<b>✍️ 簽到</b></div>`);
+    }
+    const f = data.festival;
+    if (f) {
+        const when = f.days === 0 ? '就是今天' : f.days === 1 ? '明天' : `${f.days} 天`;
+        chips.push(`<div class="bz-chip bz-chip-fes">🏮 ${esc(f.name)}<b>${when}</b></div>`);
+    }
+    const tip = data.weather?.tip ? `<div class="bz-today-tip">${esc(data.weather.tip)}</div>` : '';
+    return (chips.length ? `<div class="bz-chips">${chips.join('')}</div>` : '') + tip;
 }
 
 function monthWidget(m, me) {
@@ -112,29 +129,6 @@ function pickWidget(p) {
         </div>`;
 }
 
-function walletWidget(w) {
-    if (!w) return '';
-    return `
-        <div class="bz-w bz-wallet">
-            <div class="bz-t">🥟 包子幣</div>
-            <div class="bz-big">${w.coins}</div>
-            <div class="bz-sub">${w.streak ? `連續簽到 ${w.streak} 天` : '還沒開始連續簽到'}</div>
-            ${w.checked_in ? '<div class="bz-sub">今天簽過了 ✓</div>'
-                : '<button class="baozi-btn-small baozi-on bz-checkin" data-checkin>✍️ 簽到</button>'}
-        </div>`;
-}
-
-function festivalWidget(f) {
-    if (!f) return '';
-    const when = f.days === 0 ? '就是今天！' : f.days === 1 ? '明天' : `還有 ${f.days} 天`;
-    return `
-        <div class="bz-w">
-            <div class="bz-t">🏮 下一個節日</div>
-            <div class="bz-fname">${esc(f.name)}</div>
-            <div class="bz-sub">${when}</div>
-        </div>`;
-}
-
 function chatWidget(lines) {
     return `
         <div class="bz-w bz-wide bz-chat" data-go="chat">
@@ -166,13 +160,21 @@ export async function renderDesktop(container, ui) {
     const now = new Date();
     container.innerHTML = `
         <div class="bz-desk ${me.name === '一帆' ? 'bz-desk-alt' : ''}">
-            <div class="bz-clock" id="bz-clock">${clockText(now)}</div>
-            <div class="bz-date" id="bz-date">${dateText(now, '')}</div>
-            <div class="bz-grid" id="bz-grid"><div class="baozi-loading">載入中...</div></div>
+            <div class="bz-w bz-today">
+                <div class="bz-today-top">
+                    <div class="bz-today-time">
+                        <div class="bz-clock" id="bz-clock">${clockText(now)}</div>
+                        <div class="bz-date" id="bz-date">${dateText(now, '')}</div>
+                    </div>
+                    <div class="bz-wx" id="bz-wx"></div>
+                </div>
+                <div id="bz-chips"></div>
+            </div>
             <div class="bz-apps">
                 ${APPS.map(([k, icon, label, color]) => `
                     <div class="bz-app" data-app="${k}"><div style="background:${color}">${icon}</div>${label}</div>`).join('')}
             </div>
+            <div class="bz-grid" id="bz-grid"><div class="baozi-loading">載入中...</div></div>
         </div>`;
 
     clearInterval(clockTimer);
@@ -183,8 +185,7 @@ export async function renderDesktop(container, ui) {
     }, 20_000);
 
     // App 圖示一進來就要能按 —— 不等小組件的資料（資料讀不到也照樣能用）
-    container.querySelector('.bz-apps').onclick = (ev) => {
-        const app = ev.target.closest('[data-app]')?.dataset.app;
+    const openApp = (app) => {
         if (app === 'shot') ui.shot();
         if (app === 'album') ui.go('album');
         if (app === 'dice') ui.dice();
@@ -194,6 +195,7 @@ export async function renderDesktop(container, ui) {
         if (app === 'game') ui.go('game');
         if (app === 'shop') ui.go('shop');
     };
+    container.querySelector('.bz-apps').onclick = (ev) => openApp(ev.target.closest('[data-app]')?.dataset.app);
 
     // 克總回信的紅點
     inboxUnread().then(n => {
@@ -202,6 +204,7 @@ export async function renderDesktop(container, ui) {
     });
 
     const grid = container.querySelector('#bz-grid');
+    const chipsEl = container.querySelector('#bz-chips');
     let data;
     try {
         data = await botFetch('/club/desktop');
@@ -211,6 +214,7 @@ export async function renderDesktop(container, ui) {
     }
     if (!document.body.contains(grid)) return;
     container.querySelector('#bz-date').textContent = dateText(new Date(), data.lunar);
+    container.querySelector('#bz-wx').innerHTML = weatherBlock(data.weather);
 
     const husbands = data.husbands || [];
     // 老公此刻：多位的話，挑最近有動靜的那位當主角
@@ -218,39 +222,44 @@ export async function renderDesktop(container, ui) {
     let main = ranked[0];
     let wallet = null;
 
+    const drawChips = () => { chipsEl.innerHTML = chipsBlock(data, wallet); };
     const draw = () => {
+        drawChips();
         grid.innerHTML = [
-            weatherWidget(data.weather),
-            monthWidget(data.month, me),
             husbandWidget(main),
             crewWidget(husbands, main?.name),
             pickWidget(data.pick),
-            walletWidget(wallet),
-            festivalWidget(data.festival),
+            monthWidget(data.month, me),
             chatWidget(data.chat),
         ].join('');
     };
     draw();
-    botFetch('/club/wallet').then(w => { wallet = w; if (document.body.contains(grid)) draw(); }).catch(() => {});
+    botFetch('/club/wallet').then(w => { wallet = w; if (document.body.contains(grid)) drawChips(); }).catch(() => {});
 
-    grid.onclick = async (ev) => {
+    // 格子：沒簽到就點了簽到；簽過了點包子幣去商店
+    chipsEl.onclick = async (ev) => {
         const ck = ev.target.closest('[data-checkin]');
         if (ck) {
-            ck.disabled = true;
+            if (ck.dataset.busy) return;
+            ck.dataset.busy = '1';
             try {
                 const res = await botFetch('/club/wallet/checkin', { method: 'POST', body: { where: '包子club' } });
                 wallet = res;
-                draw();
+                drawChips();
                 if (res.ok) {
-                    const box = grid.querySelector('.bz-wallet .bz-t');
-                    if (box) box.insertAdjacentHTML('beforeend', ` <span class="bz-plus">＋${res.pay}${res.stamps === 7 ? ' 🎉' : ''}</span>`);
+                    const b = chipsEl.querySelector('.bz-chip-coin');
+                    if (b) b.insertAdjacentHTML('beforeend', `<span class="bz-plus">＋${res.pay}${res.stamps === 7 ? ' 🎉' : ''}</span>`);
                 }
             } catch (e) {
-                ck.disabled = false;
+                delete ck.dataset.busy;
                 alert(t(e.message));
             }
             return;
         }
+        openApp(ev.target.closest('[data-app]')?.dataset.app);
+    };
+
+    grid.onclick = async (ev) => {
         const pickH = ev.target.closest('[data-pick-husband]');
         if (pickH) {
             main = husbands.find(h => h.name === pickH.dataset.pickHusband) || main;

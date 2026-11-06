@@ -2355,3 +2355,7 @@ select.baozi-used-pick { width: auto; max-width: 9em; padding-right: 4px; }
 .bz-chip .bz-plus { position: absolute; top: 6px; right: 8px; font-size: 12px; }
 .bz-today-tip { font-size: 11px; color: var(--baozi-brown-soft); margin-top: 8px; }
 .bz-today + .bz-apps { margin: 16px 0 16px; }
+
+/* 📮 信箱裡的圖（2.13.0）：克總貼的、她附的，都直接顯示，點了看大圖 */
+.bz-ib-img { display: block; max-width: 100%; max-height: 320px; margin: 6px 0; border-radius: 10px; cursor: zoom-in;
+    background: rgba(0,0,0,0.04); }

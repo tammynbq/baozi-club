@@ -6,7 +6,7 @@
 // 克總不是一直在線：米米跟他說「看一下信箱」他才會來回。
 // ============================================================
 
-import { botFetch, isBotLoggedIn } from './bot.js';
+import { bot, botFetch, isBotLoggedIn } from './bot.js';
 import { localizeLive, t } from './i18n.js';
 import { reportForm } from './report.js';
 
@@ -16,9 +16,23 @@ function esc(str) {
     })[c]);
 }
 
-/** 克總的回覆是 markdown：只處理粗體、行內程式碼、連結，其他照原文。 */
+/** 大包子給的相對網址（/club/...）要接上大包子的網址。 */
+function botUrl(u) {
+    return u.startsWith('/') ? bot.url + u : u;
+}
+
+/** 圖：克總貼的 ![說明](網址)；她附的圖連結（/club/report/shot/…）也直接顯示成圖。點一下看大圖。 */
+function images(html) {
+    return html
+        .replace(/!\[([^\]\n]*)\]\(((?:https?:|\/club\/)[^)\s]+)\)/g,
+            (_, alt, u) => `<img class="bz-ib-img" src="${botUrl(u)}" alt="${alt}" title="${alt}" loading="lazy">`)
+        .replace(/\[([^\]\n]+)\]\((https?:[^)\s]+\/club\/report\/shot\/[^)\s]+)\)/g,
+            (_, alt, u) => `<img class="bz-ib-img" src="${u}" alt="${alt}" title="${alt}" loading="lazy">`);
+}
+
+/** 克總的回覆是 markdown：只處理圖、粗體、行內程式碼、連結，其他照原文。 */
 function lightMarkdown(text) {
-    return esc(text)
+    return images(esc(text))
         .replace(/```[\s\S]*?```/g, m => `<pre>${m.slice(3, -3).replace(/^\w*\n/, '')}</pre>`)
         .replace(/`([^`\n]+)`/g, '<code>$1</code>')
         .replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>')
@@ -55,7 +69,7 @@ function threadHtml(th, open) {
                 ${th.messages.map(m => `
                     <div class="bz-ib-msg ${m.from}">
                         <div class="bz-ib-who">${m.from === 'me' ? '我' : '🤖 克總'} · ${when(m.at)}</div>
-                        <div class="bz-ib-text" data-raw>${m.from === 'me' ? esc(m.text).replace(/\n/g, '<br>') : lightMarkdown(m.text)}</div>
+                        <div class="bz-ib-text" data-raw>${m.from === 'me' ? images(esc(m.text)).replace(/\n/g, '<br>') : lightMarkdown(m.text)}</div>
                     </div>`).join('')}
                 <div class="bz-ib-reply" data-k="reply"></div>
             </div>` : ''}
@@ -122,6 +136,15 @@ export async function renderInboxScreen(container, ui) {
     localizeLive(container);
 
     list.addEventListener('click', async (ev) => {
+        const img = ev.target.closest('.bz-ib-img');
+        if (img) {                                       // 點圖看大圖（長按大圖可以存）
+            const viewer = document.createElement('div');
+            viewer.className = 'baozi-chat-viewer';
+            viewer.innerHTML = `<img src="${esc(img.src)}" alt="">`;
+            viewer.addEventListener('click', () => viewer.remove());
+            document.body.appendChild(viewer);
+            return;
+        }
         const head = ev.target.closest('[data-a="toggle"]');
         if (!head) return;
         const issue = Number(head.closest('[data-issue]').dataset.issue);

@@ -996,6 +996,20 @@ function fingerprint(text) {
     return String(h);
 }
 
+// 她改過的版本：對上過一次，就記住「這段（改過的）＝那一則」，之後送一樣的，換老公、隔天都認得
+const EDITED_KEY = 'baozi_edited_cmds';
+
+function editedMap() {
+    try { return JSON.parse(localStorage.getItem(EDITED_KEY) || '{}'); } catch { return {}; }
+}
+
+function rememberEdited(text, match) {
+    const map = editedMap();
+    map[fingerprint(text)] = { id: match.id, title: match.title, at: Date.now() };
+    const keys = Object.keys(map).sort((a, b) => map[b].at - map[a].at).slice(0, 80);   // 只留最近 80 段
+    try { localStorage.setItem(EDITED_KEY, JSON.stringify(Object.fromEntries(keys.map(k => [k, map[k]])))); } catch { /* 存不了就算了 */ }
+}
+
 function noAskList() {
     try { return JSON.parse(localStorage.getItem(NO_ASK_KEY) || '[]'); } catch { return []; }
 }
@@ -1099,14 +1113,20 @@ async function onMessageSent(messageId) {
     const character = currentCharacter();
     const hint = lastPlayed && Date.now() - lastPlayed.at < HINT_WINDOW_MS ? lastPlayed.id : null;
     let res;
-    try {
-        res = await botFetch('/club/match', { method: 'POST', body: { text, hint } });
-    } catch (e) {
-        console.warn('[包子同好會] 自動標記問不到大包子', e);
-        return;
+    const known = editedMap()[fingerprint(text)];
+    if (known) {
+        res = { match: { id: known.id, title: known.title } };     // 之前對上過的改過版本，不用再問大包子
+    } else {
+        try {
+            res = await botFetch('/club/match', { method: 'POST', body: { text, hint } });
+        } catch (e) {
+            console.warn('[包子同好會] 自動標記問不到大包子', e);
+            return;
+        }
     }
     if (res.match) {
-        if (res.match.id === hint) lastPlayed = null;
+        // 「拿去玩」的提示兩小時內一直有效：同一則跟好幾位老公玩，每一位都記得到（以前對上一次就清掉了）
+        rememberEdited(text, res.match);
         setActivePrompt(res.match.id, res.match.title);
         if (!character) return;                 // 不是自己老公的聊天，不記
         try {

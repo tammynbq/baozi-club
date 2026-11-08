@@ -2299,6 +2299,7 @@ select.baozi-used-pick { width: auto; max-width: 9em; padding-right: 4px; }
 .bz-ib-msg.me { background: rgba(232,183,122,0.18); align-self: flex-end; max-width: 88%; }
 .bz-ib-msg.claude { background: rgba(91,155,176,0.12); align-self: flex-start; max-width: 94%; }
 .bz-ib-who { font-size: 11px; opacity: .6; margin-bottom: 2px; }
+.bz-ib-msg.me.friend { background: rgba(160,200,140,0.18); align-self: flex-start; }   /* 寫給兩個人的信：另一位回的 */
 .bz-ib-text code { background: rgba(0,0,0,0.06); padding: 0 4px; border-radius: 4px; font-size: 12px; }
 .bz-ib-text pre { background: rgba(0,0,0,0.06); padding: 6px 8px; border-radius: 8px; overflow-x: auto; font-size: 12px; }
 .bz-ib-reply { margin-top: 4px; }

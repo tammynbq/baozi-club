@@ -1590,6 +1590,13 @@ a.baozi-btn-small {
     gap: 8px;
 }
 .baozi-lib-sticky .baozi-screen-header { margin-bottom: 0; padding-bottom: 0; border-bottom: none; }
+.baozi-lib-addbtn { margin-left: auto; white-space: nowrap; }
+#baozi-lib-addbox { margin-bottom: 12px; background: rgba(255,255,255,0.55); border: 1px dashed var(--baozi-cream-dark); border-radius: 14px; padding: 4px 10px 10px; }
+.baozi-lib-addform select { width: 100%; padding: 8px 10px; border-radius: 10px; border: 2px solid var(--baozi-cream-dark); background: white; color: var(--baozi-brown); }
+.baozi-lib-recent { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; max-height: 180px; overflow-y: auto; }
+.baozi-lib-recent-title { font-size: 12px; opacity: .7; }
+.baozi-lib-recent-item { text-align: left; font-size: 12px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--baozi-cream-dark); background: white; color: var(--baozi-brown); cursor: pointer; }
+.baozi-lib-recent-item.active { border-color: var(--baozi-brown); background: rgba(232,183,122,0.25); }
 
 .baozi-lib-chips {
     display: flex;

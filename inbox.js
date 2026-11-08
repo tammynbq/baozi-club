@@ -67,8 +67,8 @@ function threadHtml(th, open) {
             ${open ? `
             <div class="bz-ib-body">
                 ${th.messages.map(m => `
-                    <div class="bz-ib-msg ${m.from}">
-                        <div class="bz-ib-who">${m.from === 'me' ? '我' : '🤖 克總'} · ${when(m.at)}</div>
+                    <div class="bz-ib-msg ${m.from}${m.name ? ' friend' : ''}">
+                        <div class="bz-ib-who">${m.from === 'me' ? (m.name ? esc(m.name) : '我') : '🤖 克總'} · ${when(m.at)}</div>
                         <div class="bz-ib-text" data-raw>${m.from === 'me' ? images(esc(m.text)).replace(/\n/g, '<br>') : lightMarkdown(m.text)}</div>
                     </div>`).join('')}
                 <div class="bz-ib-reply" data-k="reply"></div>

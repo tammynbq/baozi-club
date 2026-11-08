@@ -334,6 +334,7 @@ export async function renderLibraryScreen(container, ui, opts = {}) {
                 <div class="baozi-screen-header">
                     <button class="baozi-back" id="baozi-back">← 回首頁</button>
                     <h3>📖 大包子指令庫</h3>
+                    <button class="baozi-btn-small baozi-lib-addbtn" id="baozi-lib-add">＋ 存指令</button>
                 </div>
                 <input type="text" class="baozi-search" id="baozi-lib-q" placeholder="🔍 搜標題 / 題材..." value="${esc(view.q)}">
                 <div class="baozi-lib-chips" id="baozi-lib-filters">
@@ -350,11 +351,22 @@ export async function renderLibraryScreen(container, ui, opts = {}) {
                     </select>
                 </div>` : ''}
             </div>
+            <div id="baozi-lib-addbox" hidden></div>
             <div id="baozi-lib-pin"></div>
             <div class="baozi-list" id="baozi-lib-list"><div class="baozi-loading">載入中...</div></div>
         </div>
     `;
     container.querySelector('#baozi-back').addEventListener('click', ui.back);
+    const addBox = container.querySelector('#baozi-lib-addbox');
+    container.querySelector('#baozi-lib-add').addEventListener('click', () => {
+        if (addBox.hidden) openAddBox(addBox, chars, view.character, (res) => {
+            pinned = res.command;
+            pinLabel = res.created ? '📮 剛存好的' : '📮 包子本來就有這則';
+            load();
+            pinBox.scrollIntoView({ block: 'start' });
+        });
+        else addBox.hidden = true;
+    });
 
     const list = container.querySelector('#baozi-lib-list');
     const pinBox = container.querySelector('#baozi-lib-pin');
@@ -1062,7 +1074,85 @@ function guessTitle(text) {
     const first = String(text).replace(/^[\s$＄]+/, '').split('\n')[0]
         .replace(/^(暫停當前劇情|暂停当前剧情)[，,。\s]*/, '')
         .replace(/^(生成番外小劇場|生成番外小剧场)[：:，,\s]*/, '');
-    return first.slice(0, 20);
+    return first.split(/[。！？!?]/)[0].slice(0, 20);
+}
+
+/** 聊天裡她自己發過的話（新的在前），給「從聊天裡挑」用 */
+function recentUserMessages(limit = 8) {
+    const chat = stContext()?.chat || [];
+    const out = [];
+    for (let i = chat.length - 1; i >= 0 && out.length < limit; i--) {
+        const m = chat[i];
+        if (m?.is_user && String(m.mes || '').trim().length >= 10) out.push(String(m.mes));
+    }
+    return out;
+}
+
+/** 指令庫的「＋ 存指令」：自己貼、或從聊天裡挑一則，存進大包子（Discord 論壇也會發一篇） */
+function openAddBox(box, chars, character, onSaved) {
+    const recent = recentUserMessages();
+    box.hidden = false;
+    box.innerHTML = `
+        <div class="baozi-form baozi-lib-addform">
+            <label>指令內容</label>
+            <textarea data-f="body" rows="6" placeholder="貼上指令，或從下面挑一則你剛在聊天裡發的"></textarea>
+            ${recent.length ? `
+            <div class="baozi-lib-recent">
+                <div class="baozi-lib-recent-title">💬 從聊天裡挑（你最近發的）</div>
+                ${recent.map((m, i) => `<button class="baozi-lib-recent-item" data-i="${i}" data-raw>${esc(m.replace(/\s+/g, ' ').slice(0, 60))}${m.length > 60 ? '…' : ''}</button>`).join('')}
+            </div>` : ''}
+            <label>標題</label>
+            <input type="text" data-f="title" maxlength="100" placeholder="不填就用開頭幾個字">
+            <label>題材（用逗號分開，可以不填）</label>
+            <input type="text" data-f="topics" placeholder="例如：古風, 甜">
+            ${chars.length ? `
+            <label>跟誰玩過</label>
+            <select data-f="char">
+                <option value="">（還沒玩／先不記）</option>
+                ${chars.map(c => `<option value="${esc(c)}" ${c === character ? 'selected' : ''}>${esc(c)}</option>`).join('')}
+            </select>` : ''}
+            <div class="baozi-toast-hint">存了會發到 Discord 的指令庫論壇，兩個人都看得到</div>
+            <div class="baozi-toast-row">
+                <button class="baozi-btn-primary" data-a="save">📮 存進包子</button>
+                <button class="baozi-btn-small" data-a="cancel">取消</button>
+            </div>
+            <div class="baozi-error" data-k="err"></div>
+        </div>`;
+    const $ = (sel) => box.querySelector(sel);
+    $('[data-f="body"]').focus();
+    box.onclick = async (ev) => {
+        const pick = ev.target.closest('.baozi-lib-recent-item');
+        if (pick) {
+            const text = recent[Number(pick.dataset.i)];
+            $('[data-f="body"]').value = text;
+            if (!$('[data-f="title"]').value.trim()) $('[data-f="title"]').value = guessTitle(text);
+            box.querySelectorAll('.baozi-lib-recent-item').forEach(b => b.classList.toggle('active', b === pick));
+            return;
+        }
+        const btn = ev.target.closest('[data-a]');
+        if (!btn) return;
+        if (btn.dataset.a === 'cancel') { box.hidden = true; return; }
+        const body = $('[data-f="body"]').value.trim();
+        if (!body) { $('[data-k="err"]').textContent = t('先貼上指令內容～'); return; }
+        btn.disabled = true;
+        try {
+            const res = await botFetch('/club/commands', {
+                method: 'POST',
+                body: {
+                    title: $('[data-f="title"]').value.trim() || guessTitle(body),
+                    topics: $('[data-f="topics"]').value,
+                    body,
+                    character: $('[data-f="char"]')?.value || '',
+                },
+            });
+            box.hidden = true;
+            if (res.command.body === undefined) res.command.body = body;
+            onSaved(res);
+        } catch (e) {
+            btn.disabled = false;
+            $('[data-k="err"]').textContent = t(e.message);
+        }
+    };
 }
 
 function askToSave(text, character) {

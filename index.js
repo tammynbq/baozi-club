@@ -12,7 +12,7 @@ import {
     bot, isBotLoggedIn, botLogout, refreshMe, renderBotLoginScreen,
     renderLibraryScreen, renderChatScreen, closeChat,
     rollDice, renderDiceSettings, DICE_EMPTY,
-    fetchNotifications, renderNotificationsScreen, startAutoMark,
+    fetchNotifications, renderNotificationsScreen, startAutoMark, botFetch,
 } from './bot.js';
 import { localizeLive, refreshLocale, t } from './i18n.js';
 import { enterSelectMode, renderAlbumScreen, renderFavsScreen } from './shots.js';
@@ -1528,7 +1528,7 @@ function go(tab, opts = {}) {
             break;
         case 'game':
             setActiveTab('');
-            renderGameScreen(body, { back: () => renderHomeScreen(body) });
+            renderGameScreen(body, { back: () => renderHomeScreen(body), place: opts.place });
             break;
         case 'inbox':
             setActiveTab('');
@@ -1557,8 +1557,41 @@ async function pollInbox() {
 }
 
 function startInboxCheck() {
-    setInterval(() => pollInbox().catch(() => {}), INBOX_EVERY_MS);
-    document.addEventListener('visibilitychange', () => { if (!document.hidden) pollInbox().catch(() => {}); });
+    const both = async () => { if (!(await pollInbox().catch(() => false))) await pollNudge().catch(() => false); };
+    setInterval(both, INBOX_EVERY_MS);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) both(); });
+}
+
+// 🥟 小包子有話說（大包子 /club/nudge）：例如老公今天生日，叫她去小世界找他。同一句只講一次；
+// 按「等一下」半小時後再提醒
+const NUDGE_SEEN = 'xbz_nudge_seen';
+let nudgeSnoozeUntil = 0;
+
+async function pollNudge() {
+    if (!isBotLoggedIn() || Date.now() < nudgeSnoozeUntil) return false;
+    if (document.getElementById('xbz-bubble')) return false;
+    const { nudge } = await botFetch('/club/nudge');
+    if (!nudge) return false;
+    let seen = '';
+    try { seen = localStorage.getItem(NUDGE_SEEN) || ''; } catch { /* 讀不到就照講 */ }
+    if (seen === nudge.id) return false;
+    const markSeen = () => { try { localStorage.setItem(NUDGE_SEEN, nudge.id); } catch { /* 存不了 */ } };
+    const game = nudge.action === 'game';
+    const bubble = showBubble(`
+        <div class="xbz-say">${escapeHtml(nudge.text)}</div>
+        <div class="baozi-toast-row">
+            ${game ? '<button class="baozi-btn-small baozi-on" data-a="go">🎮 去找他</button>' : ''}
+            <button class="baozi-btn-small" data-a="bye">${game ? '等一下' : '好～'}</button>
+        </div>`);
+    bubble.addEventListener('click', (ev) => {
+        const a = ev.target.closest('[data-a]')?.dataset.a;
+        if (a === 'go') { markSeen(); closeBubble(); openPanel(); go('game', { place: nudge.place }); }
+        if (a === 'bye') {
+            if (game) nudgeSnoozeUntil = Date.now() + 30 * 60 * 1000; else markSeen();
+            closeBubble();
+        }
+    });
+    return true;
 }
 
 async function announceInbox(known) {
@@ -2986,6 +3019,7 @@ function makeModalDraggable(overlay) {
             try {
                 if (await announceVersion()) return;
                 if (await announceInbox()) return;
+                if (await pollNudge().catch(() => false)) return;
                 await greetIfNeeded();
             } catch (e) { console.warn('[包子同好會] 小包子打招呼失敗', e); }
         }, 1500);

@@ -19,7 +19,10 @@ export function closeGame() {
 /** @param ui {back()} */
 export function renderGameScreen(container, ui) {
     container.classList.add('baozi-body-game');
-    const src = `${bot.url}/game/?who=${who()}`;
+    // ui.place：直接去某個地方（小包子叫她去找生日的老公時）；沒有就進上次待的地方
+    const src = ui.place && /^[a-z]+$/.test(ui.place)
+        ? `${bot.url}/game/new/?place=${ui.place}&who=${who()}`
+        : `${bot.url}/game/?who=${who()}`;
     container.innerHTML = `
         <div class="baozi-game">
             <div class="baozi-screen-header">

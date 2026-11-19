@@ -2181,14 +2181,25 @@ body.baozi-theme-st .baozi-btn-primary {
     background: none !important;
     border: none;
     box-shadow: none;
-    animation: xbz-bob 2.6s ease-in-out infinite;
-    filter: drop-shadow(0 4px 6px rgba(139, 90, 60, 0.3));
+    /* 一格一格跳（像素遊戲那樣）：一個循環只動兩下。以前 ease-in-out 滑來滑去＋drop-shadow 濾鏡，
+       iPhone 每秒重算幾十次，手機會燙（11/19）；影子改畫在 canvas 裡 */
+    animation: xbz-bob 2.6s steps(1, end) infinite;
 }
 #baozi-float-btn.xbz-btn:hover { transform: scale(1.08); }
 #baozi-float-btn.xbz-btn[data-pose="sleep"] { animation-duration: 4.5s; }
 .xbz-canvas { image-rendering: pixelated; display: block; width: 100%; height: 100%; }
 @keyframes xbz-bob { 0%, 100% { translate: 0 0; } 50% { translate: 0 -4px; } }
 #baozi-float-btn.baozi-has-notif::after { top: 2px; right: 6px; }
+
+/* 🔋 省電模式：會一直動的、毛玻璃都關掉 */
+body.baozi-powersave #baozi-float-btn.xbz-btn,
+body.baozi-powersave .baozi-menu-dot,
+body.baozi-powersave .baozi-card-dot,
+body.baozi-powersave .baozi-big-emoji { animation: none !important; }
+body.baozi-powersave #baozi-panel,
+body.baozi-powersave .baozi-select-bar,
+body.baozi-powersave .baozi-toast,
+body.baozi-powersave .baozi-shot-card { -webkit-backdrop-filter: none !important; backdrop-filter: none !important; }
 
 .xbz-pop {
     pointer-events: none;   /* 蒸籠只是裝飾，別擋住後面的小包子（連戳要戳得到） */

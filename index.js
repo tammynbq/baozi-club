@@ -23,7 +23,7 @@ import { announceVersion, mountVersionChip } from './version.js';
 import { renderInboxScreen, inboxUnread } from './inbox.js';
 import { renderGameScreen, closeGame } from './game.js';
 import { renderShopScreen } from './shop.js';
-import { mountMascot, greetIfNeeded, greetingEnabled, setGreetingEnabled, pokeMascot, showBubble, closeBubble } from './xiaobaozi.js';
+import { mountMascot, greetIfNeeded, greetingEnabled, setGreetingEnabled, pokeMascot, showBubble, closeBubble, powerSaveOn, setPowerSave } from './xiaobaozi.js';
 
 const extensionName = "baozi-club";
 const extensionFolderPath = `scripts/extensions/third-party/${extensionName}`;
@@ -1556,9 +1556,21 @@ async function pollInbox() {
     await announceInbox(n);
 }
 
+// 每分鐘看一下「到時間了沒」：平常 3 分鐘、省電模式 10 分鐘；酒館在背景時不查
+const POWERSAVE_EVERY_MS = 10 * 60 * 1000;
+function every(ms, fn) {
+    let last = Date.now();
+    setInterval(() => {
+        if (document.hidden) return;
+        if (Date.now() - last < (powerSaveOn() ? Math.max(ms, POWERSAVE_EVERY_MS) : ms)) return;
+        last = Date.now();
+        fn();
+    }, 60 * 1000);
+}
+
 function startInboxCheck() {
     const both = async () => { if (!(await pollInbox().catch(() => false))) await pollNudge().catch(() => false); };
-    setInterval(both, INBOX_EVERY_MS);
+    every(INBOX_EVERY_MS, both);
     document.addEventListener('visibilitychange', () => { if (!document.hidden) both(); });
 }
 
@@ -1642,7 +1654,7 @@ async function checkNotifications() {
 
 function startNotifCheck() {
     checkNotifications();
-    setInterval(checkNotifications, NOTIF_EVERY_MS);
+    every(NOTIF_EVERY_MS, checkNotifications);
     document.addEventListener('visibilitychange', () => { if (!document.hidden) checkNotifications(); });
 }
 
@@ -2517,6 +2529,7 @@ function renderSettingsScreen(container) {
                 <div class="baozi-dice-pools">
                     <button class="baozi-tag-chip baozi-toggle-chip ${greetingEnabled() ? 'active' : ''}" id="xbz-greet-toggle">${greetingEnabled() ? '✓' : '○'} 每天第一次打開時出來打招呼</button>
                     <button class="baozi-tag-chip" id="xbz-call">📣 現在叫他出來</button>
+                    <button class="baozi-tag-chip baozi-toggle-chip ${powerSaveOn() ? 'active' : ''}" id="xbz-power-toggle">${powerSaveOn() ? '✓' : '○'} 🔋 省電模式（手機發燙時開：小包子不動、新信和通知 10 分鐘看一次）</button>
                 </div>
                 <hr style="margin: 18px 0; border-color: rgba(0,0,0,0.1);">
                 <div class="baozi-setup-section-title">🌈 主題</div>
@@ -2550,6 +2563,12 @@ function renderSettingsScreen(container) {
         setGreetingEnabled(on);
         ev.currentTarget.classList.toggle('active', on);
         ev.currentTarget.textContent = (on ? '✓' : '○') + ' 每天第一次打開時出來打招呼';
+    });
+    document.getElementById('xbz-power-toggle').addEventListener('click', (ev) => {
+        const on = !powerSaveOn();
+        setPowerSave(on);
+        ev.currentTarget.classList.toggle('active', on);
+        ev.currentTarget.textContent = (on ? '✓' : '○') + ' 🔋 省電模式（手機發燙時開：小包子不動、新信和通知 10 分鐘看一次）';
     });
     document.getElementById('xbz-call').addEventListener('click', () => {
         closePanel();

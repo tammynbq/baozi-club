@@ -104,7 +104,7 @@ const POSES = {
 };
 
 /** 畫成一張 canvas（每格 scale 像素），外框是暖棕色。 */
-export function drawPose(name, scale = 2) {
+export function drawPose(name, scale = 2, shadow = false) {
     const g = grid();
     POSES[name](g);
     const c = document.createElement('canvas');
@@ -112,6 +112,13 @@ export function drawPose(name, scale = 2) {
     c.height = 34 * scale;
     c.className = 'xbz-canvas';
     const x = c.getContext('2d');
+    if (shadow) {
+        // 影子直接畫進圖裡（以前用 CSS 的 drop-shadow 濾鏡：iPhone 每動一下就整層重算，手機會燙）
+        x.fillStyle = 'rgba(139, 90, 60, 0.28)';
+        x.beginPath();
+        x.ellipse(17 * scale, 32.6 * scale, 10 * scale, 1.4 * scale, 0, 0, Math.PI * 2);
+        x.fill();
+    }
     const at = (r, q) => (r >= 0 && r < 32 && q >= 0 && q < 32 ? g[r][q] : null);
     const skip = v => v === 'z' || v === 'd' || v === 't';
     for (let r = -1; r <= 32; r++) for (let q = -1; q <= 32; q++) {
@@ -141,7 +148,7 @@ let blinkTimer = null;
 function setPose(name) {
     if (!btnRef) return;
     btnRef.querySelector('.xbz-canvas')?.remove();
-    btnRef.appendChild(drawPose(name, 2));
+    btnRef.appendChild(drawPose(name, 2, true));
     btnRef.dataset.pose = name;
 }
 
@@ -152,9 +159,11 @@ export function mountMascot(btn) {
     btn.textContent = '';
     btn.title = t('小包子（點一下說話、按兩下打開包子同好會，按住可以拖）');
     setPose(isNight() ? 'sleep' : 'idle');
+    applyPowerSave();
     clearInterval(blinkTimer);
-    // 平常偶爾眯眼笑一下；晚上睡覺
+    // 平常偶爾眯眼笑一下；晚上睡覺（酒館在背景、或開了省電模式就不動）
     blinkTimer = setInterval(() => {
+        if (document.hidden || powerSaveOn()) return;
         if (isNight()) { if (btn.dataset.pose !== 'sleep') setPose('sleep'); return; }
         if (btn.dataset.pose === 'sleep') setPose('idle');
         if (Math.random() < 0.35) {
@@ -162,6 +171,25 @@ export function mountMascot(btn) {
             setTimeout(() => { if (!isNight()) setPose('idle'); }, 1200);
         }
     }, 5000);
+}
+
+
+// ============================================================
+// 🔋 省電模式（米米 11/19：手機開著酒館就發燙，元兇是小包子一直在浮＋陰影濾鏡）
+// 開了：小包子站著不動、不眨眼，面板的毛玻璃和閃爍紅點關掉，檢查新信／通知改成 10 分鐘一次
+// ============================================================
+
+const POWER_KEY = 'xbz_powersave';
+
+export function powerSaveOn() {
+    try { return localStorage.getItem(POWER_KEY) === 'on'; } catch { return false; }
+}
+export function setPowerSave(on) {
+    try { localStorage.setItem(POWER_KEY, on ? 'on' : 'off'); } catch { /* 存不了 */ }
+    applyPowerSave();
+}
+function applyPowerSave() {
+    document.body.classList.toggle('baozi-powersave', powerSaveOn());
 }
 
 

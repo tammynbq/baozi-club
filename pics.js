@@ -651,7 +651,6 @@ export const BUILTIN_PROMPT = {
 8. 每張寫它畫的是正文第幾段（每段前面的 [數字]），圖會放在那段後面。` },
         { name: '輸出格式', role: 'system', enabled: true, content: `只照這個格式回，不要其他文字：
 <pic>
-<scene>用一句中文說這張畫的是什麼</scene>
 <after>畫的是第幾段（只寫數字）</after>
 <rating>sfw 或 nsfw</rating>
 <tags>英文標籤, 用逗號隔開</tags>
@@ -756,9 +755,20 @@ function stripForTags(text) {
         .trim();
 }
 
+// 一帆用簡體寫預設（11/24：{{角色设定}} 包子不認、原樣送出去了），所以每個變數簡繁都收
+const VAR_ALIASES = {
+    正文: ['正文'],
+    角色設定: ['角色設定', '角色设定'],
+    用戶人設: ['用戶人設', '用户人设', '用户人設', '用戶人设'],
+    固定外貌: ['固定外貌'],
+    張數: ['張數', '张数'],
+};
+
 function fill(content, vars) {
     let out = String(content || '');
-    for (const [k, v] of Object.entries(vars)) out = out.split(`{{${k}}}`).join(v);
+    for (const [k, v] of Object.entries(vars)) {
+        for (const name of VAR_ALIASES[k] || [k]) out = out.split(`{{${name}}}`).join(v);
+    }
     const ctx = stx();
     try { if (ctx?.substituteParams) out = ctx.substituteParams(out); } catch { /* */ }
     return out;
@@ -925,7 +935,7 @@ function statusHtml(st) {
 /** 一張圖：摺起來的一條；打開才看到圖和按鈕。 */
 function itemHtml(it, i) {
     const st = status.get(it.id) || '';
-    const label = `第 ${i + 1} 張${it.scene ? `・<span data-raw>${esc(it.scene)}</span>` : ''}`;
+    const label = `第 ${i + 1} 張`;
     const working = st && !st.startsWith('❌');
     let head;
     if (working) head = `<div class="bzp-pill bzp-busy"><span class="baozi-chat-spin"></span> ${label}<span class="bzp-pill-st">・${esc(st)}</span></div>`;
@@ -947,7 +957,6 @@ function itemHtml(it, i) {
     const tags = tagOpen ? `
         <div class="bzp-tags">
             <textarea class="bzp-tag-edit" data-raw rows="4">${esc(it.tags)}</textarea>
-            <button class="bzp-switch ${it.nsfw ? 'on' : ''}" data-p="nsfw">${it.nsfw ? '🔞 這張是 NSFW：會加上固定外貌的「🔞 補充」' : '這張是 SFW：不加「🔞 補充」（點一下改成 NSFW）'}</button>
             <div class="bzp-hint">改了會自動存；$名字$ 畫的時候換成固定外貌</div>
             <div class="bzp-actions">
                 ${seedMode.has(it.id) ? '<button data-p="seeddraw" class="bzp-main">🌱 同種子畫</button>' : `<button data-p="draw" class="bzp-main">${it.img ? '🔁 照這個 tag 重畫' : '🎨 畫'}</button>`}
@@ -1158,7 +1167,6 @@ async function saveAlbum(mesId, itemId, btn) {
         const blob = await (await fetch(item.img)).blob();
         const ctx = stx();
         const q = new URLSearchParams({ kind: 'image', post: '0', character: ctx?.name2 || '' });
-        if (item.scene) q.set('caption', item.scene.slice(0, 300));
         const res = await fetch(bot.url + '/club/shots?' + q, {
             method: 'POST', headers: { Authorization: 'Bearer ' + bot.token, 'Content-Type': 'image/png' }, body: blob,
         });

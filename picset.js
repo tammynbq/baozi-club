@@ -350,7 +350,7 @@ function renderPrompts(box) {
             <button data-a="import">⬇️ 匯入</button>
             <input type="file" accept=".json,application/json" hidden data-f="file">
         </div>
-        <div class="baozi-setup-hint">可以用的位置：{{正文}} {{角色設定}} {{用戶人設}} {{固定外貌}} {{張數}}，還有酒館的 {{char}} {{user}}。
+        <div class="baozi-setup-hint">可以用的位置：{{正文}} {{角色設定}} {{用戶人設}} {{固定外貌}} {{張數}}（寫簡體也認得），還有酒館的 {{char}} {{user}}。
         模型要照 &lt;pic&gt;&lt;scene&gt;…&lt;/scene&gt;&lt;tags&gt;…&lt;/tags&gt;&lt;/pic&gt; 回（也認 image###tag### 的格式）。</div>`;
     const copyOf = (p, name) => {
         const n = { id: newId(), name, entries: structuredClone(p.entries) };
@@ -484,7 +484,7 @@ function renderLooks(box) {
             ${hasC8 ? `<button data-a="pickc8" data-scope="${scope}">🎭 從智繪姬的角色管理選</button>` : ''}
         </div>`;
     box.innerHTML = `
-        <div class="baozi-setup-hint">副 API 畫到這些人時寫 $名字$，畫之前換成這裡的外貌 tag，每張圖的他才會長一樣。只寫不太會變的（髮色、瞳色、髮型、身材…），衣服表情讓副 API 照正文寫。「🔞 補充」只有 NSFW 的圖才加（小卡上的 🔞 亮著＝NSFW）。
+        <div class="baozi-setup-hint">副 API 畫到這些人時寫 $名字$，畫之前換成這裡的外貌 tag，每張圖的他才會長一樣。只寫不太會變的（髮色、瞳色、髮型、身材…），衣服表情讓副 API 照正文寫。「🔞 補充」只有副 API 判斷是 NSFW 的圖才加。
         ${hasC8 ? '連到智繪姬的角色：用它「角色特徵、五官、上／下半身 SFW」當外貌，「上／下半身 NSFW」當 🔞 補充；在智繪姬改了，包子也跟著。' : ''}</div>
         ${card ? `<div class="bzp-label">這張卡（<span data-raw>${esc(ctx?.name2 || key)}</span>）</div>${list(card, 'card')}` : '<div class="baozi-setup-hint">開一個聊天，就能填這張卡的角色</div>'}
         <div class="bzp-label">每張卡都用（例如你自己）</div>

@@ -317,6 +317,8 @@ const UC = {
 };
 const UCP_INT = { heavy: 1, furryfocus: 2, light: 3, humanfocus: 4 };
 
+export const hasNsfw = (tags) => /(^|[,{\[(\s])nsfw([,}\])\s:]|$)/i.test(String(tags || ''));
+
 const join = (...parts) => parts.map(p => String(p || '').trim().replace(/^,+|,+$/g, '').trim()).filter(Boolean).join(', ');
 
 function ucText(model, ucp) {
@@ -350,8 +352,12 @@ export function buildRequest(tags, opt = {}) {
     const v4 = model.includes('diffusion-4');
     const v3 = model === 'nai-diffusion-3';
     const quality = p.quality ? (QUALITY[model] || '') : '';
-    const positive = join(stripNotes(a.fixedPrompt), tags, stripNotes(a.fixedPrompt_end), quality);
-    const negative = join(ucText(model, p.ucp), stripNotes(a.negativePrompt));
+    // 🔞 NSFW 的圖：tag 裡沒有 nsfw 就補一個；不是的圖：負面加 nsfw（跟 NovelAI 官網一樣，curated 型號不用）
+    const nsfw = !!opt.nsfw;
+    const body0 = nsfw && !hasNsfw(tags) ? join('nsfw', tags) : tags;
+    const positive = join(stripNotes(a.fixedPrompt), body0, stripNotes(a.fixedPrompt_end), quality);
+    const guard = !nsfw && !model.includes('curated') && !hasNsfw(positive) ? 'nsfw' : '';
+    const negative = join(guard, ucText(model, p.ucp), stripNotes(a.negativePrompt));
     const seed = opt.seed ?? (['0', '', '-1'].includes(String(p.seed)) ? randomSeed() : Number(p.seed));
     const parameters = {
         params_version: v5 ? 4 : 3,
@@ -397,7 +403,7 @@ export function buildRequest(tags, opt = {}) {
     const meta = {
         artist: { name: a.name, fixedPrompt: a.fixedPrompt, fixedPrompt_end: a.fixedPrompt_end, negativePrompt: a.negativePrompt },
         params: { ...p, seed: String(seed) },
-        model: sendModel, seed, tags, positive, negative,
+        model: sendModel, seed, tags, positive, negative, nsfw,
         at: new Date().toISOString(),
     };
     return { body, meta };
@@ -600,10 +606,12 @@ export const BUILTIN_PROMPT = {
 3. 角色在「固定外貌」裡有的，外貌只寫 $名字$（例如 $白起$），程式會換成他的固定外貌；你只補這一刻的服裝、表情、動作。
 4. 照正文如實描寫，不要自己加正文沒有的東西。
 5. 只寫英文標籤、用逗號隔開，最多 60 個；可以用 {tag} 加重、[tag] 減輕。
-6. 不要寫畫師名字、品質詞（masterpiece、best quality…），那些另外加。` },
+6. 不要寫畫師名字、品質詞（masterpiece、best quality…），那些另外加。
+7. 每張標分級：畫面露骨、跟性有關就是 nsfw，其他都是 sfw。` },
         { name: '輸出格式', role: 'system', enabled: true, content: `只照這個格式回，不要其他文字：
 <pic>
 <scene>用一句中文說這張畫的是什麼</scene>
+<rating>sfw 或 nsfw</rating>
 <tags>英文標籤, 用逗號隔開</tags>
 </pic>
 要畫幾張就寫幾個 <pic>。` },
@@ -651,8 +659,11 @@ export function seedLooks() {
     saveStore();
 }
 
-export function expandLooks(tags, key = cardKey()) {
-    const map = new Map(looksFor(key).filter(l => l.tags?.trim()).map(l => [l.name.trim(), l.tags.trim()]));
+/** $名字$ → 外貌；NSFW 的圖再接上「🔞 補充」。 */
+export function expandLooks(tags, key = cardKey(), nsfw = false) {
+    const map = new Map(looksFor(key)
+        .map(l => [l.name.trim(), join(l.tags, nsfw ? l.nsfw : '')])
+        .filter(([, v]) => v));
     return String(tags).replace(/\$([^$\n]{1,30})\$/g, (all, name) => map.get(name.trim()) ?? name.trim());
 }
 
@@ -714,12 +725,15 @@ export function parsePics(text) {
     for (const m of raw.matchAll(/<pic>([\s\S]*?)(?:<\/pic>|(?=<pic>)|$)/gi)) {
         const tags = m[1].match(/<tags>([\s\S]*?)(?:<\/tags>|$)/i)?.[1];
         if (!tags?.trim()) continue;
-        out.push({ scene: (m[1].match(/<scene>([\s\S]*?)<\/scene>/i)?.[1] || '').trim(), tags: cleanTags(tags) });
+        const rating = (m[1].match(/<rating>([\s\S]*?)<\/rating>/i)?.[1] || '').trim().toLowerCase();
+        const clean = cleanTags(tags);
+        out.push({ scene: (m[1].match(/<scene>([\s\S]*?)<\/scene>/i)?.[1] || '').trim(), tags: clean,
+            nsfw: rating ? rating.includes('nsfw') : hasNsfw(clean) });
     }
     if (!out.length) {
         // 也認智繪姬／喵喵那種 image###tag### 的格式（匯入別人的提示詞時）
         for (const m of raw.matchAll(/image###([\s\S]*?)###/g)) {
-            if (m[1].trim()) out.push({ scene: '', tags: cleanTags(m[1]) });
+            if (m[1].trim()) out.push({ scene: '', tags: cleanTags(m[1]), nsfw: hasNsfw(m[1]) });
         }
     }
     return out;
@@ -846,6 +860,7 @@ function zoneHtml(mesId, mes, isLast) {
                 ${it.img
                     ? `<button data-p="draw">🔁 重畫</button><button data-p="tagview">🏷️ tag</button><button data-p="info">ℹ️</button><button data-p="album">${it.album ? '✓ 已存相簿' : '🥟 存相簿'}</button>`
                     : `<button data-p="draw" class="bzp-main">🎨 畫</button><button data-p="tagview">🏷️ 看 tag</button>`}
+                <button data-p="nsfw" class="bzp-nsfw ${it.nsfw ? 'on' : ''}" title="這張是不是 NSFW（會不會加上 🔞 補充的外貌）">🔞${it.nsfw ? ' NSFW' : ''}</button>
                 <button data-p="remove" title="拿掉這張">🗑️</button>
             </div>
             ${st ? `<div class="bzp-status">${st.startsWith('❌') ? '' : '<span class="baozi-chat-spin"></span> '}${esc(st)}</div>` : ''}
@@ -903,7 +918,7 @@ export async function makeTags(mesId, { thenDraw = false } = {}) {
     renderMes(mesId);
     try {
         const pics = await writeTags(mes.mes);
-        const items = pics.map(p => ({ id: Math.random().toString(36).slice(2, 10), scene: p.scene, tags: p.tags }));
+        const items = pics.map(p => ({ id: Math.random().toString(36).slice(2, 10), scene: p.scene, tags: p.tags, nsfw: !!p.nsfw }));
         // 已經畫好的圖保留（重寫 tag 不會把圖丟掉）
         const kept = itemsOf(mes).filter(it => it.img);
         setItems(mes, [...kept, ...items]);
@@ -932,9 +947,10 @@ export async function drawItem(mesId, itemId, opt = {}) {
     let { mes, item } = findItem(mesId, itemId);
     if (!item || (status.has(itemId) && !status.get(itemId).startsWith('❌'))) return;
     const ctx = stx();
-    const tags = expandLooks(item.tags);
+    const nsfw = !!item.nsfw;
+    const tags = expandLooks(item.tags, cardKey(), nsfw);
     const from = opt.seedFrom;
-    const { body, meta } = buildRequest(tags, from ? { params: from.params, artist: from.artist, seed: from.seed } : {});
+    const { body, meta } = buildRequest(tags, from ? { params: from.params, artist: from.artist, seed: from.seed, nsfw } : { nsfw });
     meta.rawTags = item.tags;
     try {
         const png = await draw(body, (s) => setStatus(mesId, itemId, s));
@@ -1025,7 +1041,7 @@ export function metaHtml(meta) {
         <div class="bzp-meta-grid">
             ${row('型號', meta.model)}${row('步數', p.steps)}${row('CFG', p.scale)}${row('Rescale', p.rescale)}
             ${row('採樣器', p.sampler)}${row('噪點表', p.schedule)}${row('尺寸', p.width ? `${p.width}×${p.height}` : '')}
-            ${row('種子', meta.seed)}${row('Variety+', p.variety ? '開' : '關')}${row('時間', meta.at ? new Date(meta.at).toLocaleString() : '')}
+            ${row('種子', meta.seed)}${row('分級', meta.nsfw === undefined ? '' : meta.nsfw ? '🔞 NSFW' : 'SFW')}${row('Variety+', p.variety ? '開' : '關')}${row('時間', meta.at ? new Date(meta.at).toLocaleString() : '')}
         </div>
         <div class="bzp-meta-label">這張的 tag</div><pre data-raw>${esc(meta.rawTags || meta.tags || '')}</pre>
         <details><summary>實際送出去的完整正面／負面</summary>
@@ -1157,6 +1173,15 @@ function onZoneClick(ev) {
     if (a === 'seeddraw') { const { item } = findItem(mesId, itemId); drawItem(mesId, itemId, { seedFrom: item?.meta }); return; }
     if (a === 'tagview') { const tg = btn.closest('.bzp-card').querySelector('.bzp-tags'); tg.hidden = !tg.hidden; return; }
     if (a === 'info') { openInfo(mesId, itemId); return; }
+    if (a === 'nsfw') {
+        const { mes, items, item } = findItem(mesId, itemId);
+        if (!item) return;
+        item.nsfw = !item.nsfw;
+        setItems(mes, items);
+        saveChat();
+        renderMes(mesId);
+        return;
+    }
     if (a === 'view') { viewImage(btn.getAttribute('src')); return; }
     if (a === 'album') { if (!findItem(mesId, itemId).item?.album) saveAlbum(mesId, itemId, btn); return; }
     if (a === 'remove') {

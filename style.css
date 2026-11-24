@@ -2463,3 +2463,5 @@ select.baozi-used-pick { width: auto; max-width: 9em; padding-right: 4px; }
 #baozi-panel .bzp-look textarea { background: #fff; color: var(--baozi-brown); border-color: var(--baozi-cream-dark); }
 #baozi-panel .bzp-hint { color: var(--baozi-brown-soft); }
 #baozi-panel [hidden], .bzp-zone [hidden], .bzp-modal [hidden] { display: none !important; }
+.bzp-actions .bzp-nsfw { opacity: .55; }
+.bzp-actions .bzp-nsfw.on { opacity: 1; background: color-mix(in srgb, #e0567a 28%, transparent); border-color: #e0567a; }

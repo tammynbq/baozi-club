@@ -647,15 +647,17 @@ export const BUILTIN_PROMPT = {
 4. 照正文如實描寫，不要自己加正文沒有的東西。
 5. 只寫英文標籤、用逗號隔開，最多 60 個；可以用 {tag} 加重、[tag] 減輕。
 6. 不要寫畫師名字、品質詞（masterpiece、best quality…），那些另外加。
-7. 每張標分級：畫面露骨、跟性有關就是 nsfw，其他都是 sfw。` },
+7. 每張標分級：畫面露骨、跟性有關就是 nsfw，其他都是 sfw。
+8. 每張寫它畫的是正文第幾段（每段前面的 [數字]），圖會放在那段後面。` },
         { name: '輸出格式', role: 'system', enabled: true, content: `只照這個格式回，不要其他文字：
 <pic>
 <scene>用一句中文說這張畫的是什麼</scene>
+<after>畫的是第幾段（只寫數字）</after>
 <rating>sfw 或 nsfw</rating>
 <tags>英文標籤, 用逗號隔開</tags>
 </pic>
 要畫幾張就寫幾個 <pic>。` },
-        { name: '正文', role: 'user', enabled: true, content: `正文：
+        { name: '正文', role: 'user', enabled: true, content: `正文（每段前面的 [數字] 是段號）：
 {{正文}}` },
     ],
 };
@@ -771,7 +773,8 @@ export function parsePics(text) {
         const rating = (m[1].match(/<rating>([\s\S]*?)<\/rating>/i)?.[1] || '').trim().toLowerCase();
         const clean = cleanTags(tags);
         out.push({ scene: (m[1].match(/<scene>([\s\S]*?)<\/scene>/i)?.[1] || '').trim(), tags: clean,
-            nsfw: rating ? rating.includes('nsfw') : hasNsfw(clean) });
+            nsfw: rating ? rating.includes('nsfw') : hasNsfw(clean),
+            after: Number(m[1].match(/<after>\D*(\d+)/i)?.[1]) || 0 });
     }
     if (!out.length) {
         // 也認智繪姬／喵喵那種 image###tag### 的格式（匯入別人的提示詞時）
@@ -799,8 +802,9 @@ export function countText() {
 export async function writeTags(mesText) {
     const profile = tagApiProfile();
     if (!profile) throw new Error('還沒有寫 tag 的 API～到「設定 → ✨ 排版模型」加一組，再到「🎨 生圖」選它');
+    const paras = paragraphs(mesText);
     const vars = {
-        正文: stripForTags(mesText).slice(0, 8000),
+        正文: numbered(paras).slice(0, 9000),
         角色設定: characterText(),
         用戶人設: personaText(),
         固定外貌: looksText(),
@@ -813,8 +817,26 @@ export async function writeTags(mesText) {
     const reply = await callModel(profile, msgs, { maxTokens: 2000, temperature: 0.8 });
     const pics = parsePics(reply);
     if (!pics.length) throw new Error('模型沒照格式回 tag：' + reply.slice(0, 80));
+    for (const pic of pics) {
+        if (pic.after >= 1 && pic.after <= paras.length) pic.anchor = anchorOf(paras[pic.after - 1]);
+    }
     return pics;
 }
+
+// ---------- 📍 段落：圖放在哪一段後面 ----------
+// 寫 tag 時正文一行一段（空行不算）編號給副 API；它回「第幾段」，包子記下那段開頭十幾個字當記號。
+// 畫面上找段落時先找記號（她改過正文、段落挪了也找得到），找不到才看段號，再不行放最底下。
+
+export function paragraphs(text) {
+    return stripForTags(text).split('\n').map(l => l.trim()).filter(Boolean);
+}
+
+function numbered(paras) {
+    return paras.map((l, i) => `[${i + 1}] ${l}`).join('\n');
+}
+
+const normText = (x) => String(x || '').replace(/[\s*_~`>#"'“”‘’「」『』（）()\[\]【】《》<>,.，。、!！?？:：;；…—\-]/g, '');
+export const anchorOf = (line) => normText(line).slice(0, 14);
 
 
 // ============================================================
@@ -891,40 +913,115 @@ function lastHusbandId(chat) {
     return -1;
 }
 
-function zoneHtml(mesId, mes, isLast) {
+// 打開的東西只記在記憶體：圖片每次都預設摺起來（米米：怕 🔞 的圖被人看到）
+const openImg = new Set();
+const openTag = new Set();
+const seedMode = new Set();
+
+function statusHtml(st) {
+    return `<div class="bzp-status">${st.startsWith('❌') ? '' : '<span class="baozi-chat-spin"></span> '}${esc(st)}</div>`;
+}
+
+/** 一張圖：摺起來的一條；打開才看到圖和按鈕。 */
+function itemHtml(it, i) {
+    const st = status.get(it.id) || '';
+    const label = `第 ${i + 1} 張${it.scene ? `・<span data-raw>${esc(it.scene)}</span>` : ''}`;
+    const working = st && !st.startsWith('❌');
+    let head;
+    if (working) head = `<div class="bzp-pill bzp-busy"><span class="baozi-chat-spin"></span> ${label}<span class="bzp-pill-st">・${esc(st)}</span></div>`;
+    else if (!it.img) head = `<button class="bzp-pill bzp-todo" data-p="draw">🎨 ${label}</button>`;
+    else head = `<button class="bzp-pill" data-p="fold">🖼️ ${label} <span class="bzp-caret">${openImg.has(it.id) ? '▾' : '▸'}</span></button>`;
+    // 畫好的圖摺起來時 tag 也藏起來（tag 裡可能有 🔞 的字）
+    const tagOpen = openTag.has(it.id) && (!it.img || openImg.has(it.id));
+    const tagBtn = !it.img ? `<button class="bzp-pill-mini ${tagOpen ? 'on' : ''}" data-p="tagview" title="看／改 tag">🏷️</button>` : '';
+    const body = it.img && openImg.has(it.id) ? `
+        <img class="bzp-img" src="${esc(it.img)}" data-p="view" alt="">
+        <div class="bzp-actions">
+            <button data-p="draw">🔁 重畫</button>
+            <button data-p="tagview" class="${tagOpen ? 'bzp-main' : ''}">🏷️ tag</button>
+            <button data-p="info">ℹ️</button>
+            <button data-p="album">${it.album ? '✓ 已存相簿' : '🥟 存相簿'}</button>
+            <button data-p="remove" title="拿掉這張">🗑️</button>
+        </div>
+        ${it.saved === false ? '<div class="bzp-hint">⚠️ 這張沒存進酒館，重新整理就不見了，喜歡的話先存相簿</div>' : ''}` : '';
+    const tags = tagOpen ? `
+        <div class="bzp-tags">
+            <textarea class="bzp-tag-edit" data-raw rows="4">${esc(it.tags)}</textarea>
+            <button class="bzp-switch ${it.nsfw ? 'on' : ''}" data-p="nsfw">${it.nsfw ? '🔞 這張是 NSFW：會加上固定外貌的「🔞 補充」' : '這張是 SFW：不加「🔞 補充」（點一下改成 NSFW）'}</button>
+            <div class="bzp-hint">改了會自動存；$名字$ 畫的時候換成固定外貌</div>
+            <div class="bzp-actions">
+                ${seedMode.has(it.id) ? '<button data-p="seeddraw" class="bzp-main">🌱 同種子畫</button>' : `<button data-p="draw" class="bzp-main">${it.img ? '🔁 照這個 tag 重畫' : '🎨 畫'}</button>`}
+                ${it.img ? '' : '<button data-p="remove" title="拿掉這張">🗑️</button>'}
+            </div>
+        </div>` : '';
+    return `<div class="bzp-row">${head}${tagBtn}</div>${st.startsWith('❌') ? statusHtml(st) : ''}${body}${tags}`;
+}
+
+function zoneHtml(mesId, mes, isLast, loose) {
     const items = itemsOf(mes);
     const writing = busy.get(mesId);
     if (!items.length && !writing) {
         return isLast && prefs().lastChip ? `<button class="bzp-chip" data-p="tags">🎨 生圖</button>` : '';
     }
     const head = `<div class="bzp-using" data-p="artist" title="點一下換畫師串">🖌️ 這次用：<span data-raw>${esc(usingLine())}</span> <span class="bzp-caret">▾</span></div>`;
-    const cards = items.map((it, i) => {
-        const st = status.get(it.id) || '';
-        return `
-        <div class="bzp-card" data-item="${esc(it.id)}">
-            <div class="bzp-card-head"><b>第 ${i + 1} 張</b>${it.scene ? `・<span data-raw>${esc(it.scene)}</span>` : ''}</div>
-            ${it.img ? `<img class="bzp-img" src="${esc(it.img)}" data-p="view" alt="">` : ''}
-            <div class="bzp-tags" hidden>
-                <textarea class="bzp-tag-edit" data-raw rows="4">${esc(it.tags)}</textarea>
-                <div class="bzp-hint">改了會自動存；$名字$ 畫的時候換成固定外貌</div>
-            </div>
-            <div class="bzp-actions">
-                ${it.img
-                    ? `<button data-p="draw">🔁 重畫</button><button data-p="tagview">🏷️ tag</button><button data-p="info">ℹ️</button><button data-p="album">${it.album ? '✓ 已存相簿' : '🥟 存相簿'}</button>`
-                    : `<button data-p="draw" class="bzp-main">🎨 畫</button><button data-p="tagview">🏷️ 看 tag</button>`}
-                <button data-p="nsfw" class="bzp-nsfw ${it.nsfw ? 'on' : ''}" title="這張是不是 NSFW（會不會加上 🔞 補充的外貌）">🔞${it.nsfw ? ' NSFW' : ''}</button>
-                <button data-p="remove" title="拿掉這張">🗑️</button>
-            </div>
-            ${st ? `<div class="bzp-status">${st.startsWith('❌') ? '' : '<span class="baozi-chat-spin"></span> '}${esc(st)}</div>` : ''}
-            ${it.img && it.saved === false ? '<div class="bzp-hint">⚠️ 這張沒存進酒館，重新整理就不見了，喜歡的話先存相簿</div>' : ''}
-        </div>`;
-    }).join('');
-    return `${head}${cards}
-        ${writing ? `<div class="bzp-status"><span class="baozi-chat-spin"></span> ${esc(writing)}</div>` : ''}
+    const rest = loose.map(({ it, i }) => `<div class="bzp-inline" data-item="${esc(it.id)}">${itemHtml(it, i)}</div>`).join('');
+    return `${head}${rest}
+        ${writing ? statusHtml(writing) : ''}
         <div class="bzp-actions bzp-foot">
             <button data-p="tags">✍️ 重寫 tag</button>
             ${items.some(it => !it.img) ? '<button data-p="drawall">🎨 全部畫</button>' : ''}
         </div>`;
+}
+
+const BLOCK = /^(P|DIV|LI|BLOCKQUOTE|H[1-6]|PRE|UL|OL|TABLE|DETAILS|SECTION|ARTICLE|FIGURE|CENTER)$/;
+
+/** 畫面上的段落：一行一段（<br> 或區塊結尾就換段），記下圖要插在哪。 */
+function domLines(root) {
+    const lines = [];
+    let text = '';
+    let last = null;
+    const flush = (target) => {
+        if (normText(text)) lines.push({ text, target });
+        text = '';
+    };
+    const walk = (node) => {
+        for (const ch of [...node.childNodes]) {
+            if (ch.nodeType === 3) { text += ch.nodeValue; last = ch; continue; }
+            if (ch.nodeType !== 1) continue;
+            if (ch.classList.contains('bzp-inline') || /^(SCRIPT|STYLE|TEMPLATE)$/.test(ch.tagName)) continue;
+            if (ch.tagName === 'BR') { flush({ node: ch, where: 'after' }); last = ch; continue; }
+            if (BLOCK.test(ch.tagName)) {
+                if (normText(text)) flush({ node: last || ch, where: last ? 'after' : 'before' });
+                walk(ch);
+                flush({ node: ch, where: 'after' });
+                last = ch;
+                continue;
+            }
+            walk(ch);
+            last = ch;
+        }
+    };
+    walk(root);
+    flush({ node: root, where: 'end' });
+    return lines;
+}
+
+function findLine(lines, it, paraCount) {
+    if (it.anchor) {
+        let i = lines.findIndex(l => normText(l.text).startsWith(it.anchor));
+        if (i < 0) i = lines.findIndex(l => normText(l.text).includes(it.anchor.slice(0, 8)));
+        if (i >= 0) return lines[i];
+    }
+    // 沒有記號（舊的）或找不到：段數對得上才照段號放
+    if (it.after >= 1 && lines.length === paraCount) return lines[it.after - 1];
+    return null;
+}
+
+function insertAt(target, el) {
+    const { node, where } = target;
+    if (where === 'end') node.appendChild(el);
+    else if (where === 'before') node.parentNode.insertBefore(el, node);
+    else node.parentNode.insertBefore(el, node.nextSibling);
 }
 
 export function renderMes(mesId) {
@@ -932,21 +1029,37 @@ export function renderMes(mesId) {
     const mes = ctx?.chat?.[mesId];
     const el = document.querySelector(`#chat .mes[mesid="${mesId}"]`);
     if (!el) return;
+    el.querySelectorAll('.bzp-inline').forEach(x => x.remove());
     let zone = el.querySelector('.bzp-zone');
     if (!isHusbandMes(mes)) { zone?.remove(); return; }
-    const html = zoneHtml(mesId, mes, mesId === lastHusbandId(ctx.chat));
+    const items = itemsOf(mes);
+    // 先放進段落：同一段有好幾張就照順序排
+    const textEl = el.querySelector('.mes_text');
+    const loose = [];
+    const lines = textEl && items.some(it => it.anchor || it.after) ? domLines(textEl) : [];
+    const paraCount = lines.length ? paragraphs(mes.mes).length : 0;
+    const lastAt = new Map();
+    items.forEach((it, i) => {
+        const line = lines.length ? findLine(lines, it, paraCount) : null;
+        if (!line) { loose.push({ it, i }); return; }
+        const box = document.createElement('div');
+        box.className = 'bzp-inline';
+        box.dataset.item = it.id;
+        box.innerHTML = itemHtml(it, i);
+        const prev = lastAt.get(line);
+        if (prev) prev.after(box); else insertAt(line.target, box);
+        lastAt.set(line, box);
+        localizeLive(box);
+    });
+    const html = zoneHtml(mesId, mes, mesId === lastHusbandId(ctx.chat), loose);
     if (!html) { zone?.remove(); return; }
     if (!zone) {
         zone = document.createElement('div');
         zone.className = 'bzp-zone';
-        const text = el.querySelector('.mes_text');
-        (text?.parentElement || el).insertBefore(zone, text?.nextSibling || null);
+        (textEl?.parentElement || el).insertBefore(zone, textEl?.nextSibling || null);
     }
-    // 打開過的 tag 框重畫後保持打開
-    const open = new Set([...zone.querySelectorAll('.bzp-card')].filter(c => !c.querySelector('.bzp-tags')?.hidden).map(c => c.dataset.item));
     zone.innerHTML = html;
     zone.dataset.mes = String(mesId);
-    open.forEach(id => { const tg = zone.querySelector(`[data-item="${CSS.escape(id)}"] .bzp-tags`); if (tg) tg.hidden = false; });
     localizeLive(zone);
 }
 
@@ -970,7 +1083,8 @@ export async function makeTags(mesId, { thenDraw = false } = {}) {
     renderMes(mesId);
     try {
         const pics = await writeTags(mes.mes);
-        const items = pics.map(p => ({ id: Math.random().toString(36).slice(2, 10), scene: p.scene, tags: p.tags, nsfw: !!p.nsfw }));
+        const items = pics.map(p => ({ id: Math.random().toString(36).slice(2, 10), scene: p.scene, tags: p.tags, nsfw: !!p.nsfw,
+            after: p.after || 0, anchor: p.anchor || '' }));
         // 已經畫好的圖保留（重寫 tag 不會把圖丟掉）
         const kept = itemsOf(mes).filter(it => it.img);
         setItems(mes, [...kept, ...items]);
@@ -1134,14 +1248,12 @@ function openInfo(mesId, itemId) {
         }
         if (a === 'seed') {
             m.remove();
-            // 打開 tag 框讓她改，改好按「🌱 畫」
-            const card = document.querySelector(`.bzp-zone[data-mes="${mesId}"] [data-item="${CSS.escape(itemId)}"]`);
-            card?.querySelector('.bzp-tags')?.removeAttribute('hidden');
-            const acts = card?.querySelector('.bzp-actions');
-            if (acts && !acts.querySelector('[data-p="seeddraw"]')) {
-                acts.insertAdjacentHTML('afterbegin', `<button data-p="seeddraw" class="bzp-main">${t('🌱 同種子畫')}</button>`);
-            }
-            card?.querySelector('textarea')?.focus();
+            // 打開 tag 框讓她改，改好按「🌱 同種子畫」
+            seedMode.add(itemId);
+            openTag.add(itemId);
+            openImg.add(itemId);
+            renderMes(mesId);
+            document.querySelector(`#chat .mes[mesid="${mesId}"] .bzp-inline[data-item="${CSS.escape(itemId)}"] textarea`)?.focus();
         }
     });
 }
@@ -1210,11 +1322,11 @@ function viewImage(src) {
 
 function onZoneClick(ev) {
     const btn = ev.target.closest('[data-p]');
-    const zone = ev.target.closest('.bzp-zone');
+    const zone = ev.target.closest('.bzp-zone, .bzp-inline');
     if (!btn || !zone) return;
     ev.preventDefault();
     ev.stopPropagation();
-    const mesId = Number(zone.dataset.mes ?? zone.closest('.mes')?.getAttribute('mesid'));
+    const mesId = Number(zone.closest('.mes')?.getAttribute('mesid'));
     const itemId = btn.closest('[data-item]')?.dataset.item;
     const a = btn.dataset.p;
     if (a === 'tags') { makeTags(mesId); return; }
@@ -1222,8 +1334,9 @@ function onZoneClick(ev) {
     if (a === 'drawall') { itemsOf(stx().chat[mesId]).filter(it => !it.img).forEach(it => drawItem(mesId, it.id)); return; }
     if (!itemId) return;
     if (a === 'draw') { drawItem(mesId, itemId); return; }
-    if (a === 'seeddraw') { const { item } = findItem(mesId, itemId); drawItem(mesId, itemId, { seedFrom: item?.meta }); return; }
-    if (a === 'tagview') { const tg = btn.closest('.bzp-card').querySelector('.bzp-tags'); tg.hidden = !tg.hidden; return; }
+    if (a === 'seeddraw') { seedMode.delete(itemId); const { item } = findItem(mesId, itemId); drawItem(mesId, itemId, { seedFrom: item?.meta }); return; }
+    if (a === 'fold') { if (openImg.has(itemId)) { openImg.delete(itemId); openTag.delete(itemId); } else openImg.add(itemId); renderMes(mesId); return; }
+    if (a === 'tagview') { if (openTag.has(itemId)) { openTag.delete(itemId); seedMode.delete(itemId); } else openTag.add(itemId); renderMes(mesId); return; }
     if (a === 'info') { openInfo(mesId, itemId); return; }
     if (a === 'nsfw') {
         const { mes, items, item } = findItem(mesId, itemId);
@@ -1248,8 +1361,7 @@ function onZoneClick(ev) {
 function onTagEdit(ev) {
     const ta = ev.target.closest('.bzp-tag-edit');
     if (!ta) return;
-    const zone = ta.closest('.bzp-zone');
-    const mesId = Number(zone?.dataset.mes);
+    const mesId = Number(ta.closest('.mes')?.getAttribute('mesid'));
     const itemId = ta.closest('[data-item]')?.dataset.item;
     const { mes, items, item } = findItem(mesId, itemId);
     if (!item) return;

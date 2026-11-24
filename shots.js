@@ -11,6 +11,7 @@
 
 import { bot, botFetch, currentCharacter, activePrompt } from './bot.js';
 import { t, localizeLive } from './i18n.js';
+import { metaHtml, restoreArtist } from './pics.js';
 
 function esc(str) {
     return String(str ?? '').replace(/[&<>"']/g, c => ({
@@ -877,6 +878,7 @@ export async function renderAlbumScreen(container, ui) {
                 ${s.prompt_title ? `<br><span data-raw>《${esc(s.prompt_title)}》</span>` : ''}
             </div>
             <div class="baozi-album-actions">
+                ${s.meta ? '<button class="baozi-btn-small" data-a="meta" title="用了哪個畫師串">ℹ️</button>' : ''}
                 ${s.posted_url ? '<span class="baozi-lib-badge">已發</span>' : '<button class="baozi-btn-small" data-a="post">📤 發</button>'}
                 <button class="baozi-btn-small" data-a="del">🗑️</button>
             </div>
@@ -895,6 +897,16 @@ export async function renderAlbumScreen(container, ui) {
             if (!confirm(t('刪掉這張？（已經發到 DC 的不會被收回）'))) return;
             await botFetch(`/club/shots/${id}`, { method: 'DELETE' });
             item.remove();
+            return;
+        }
+        if (a === 'meta') {
+            const shot = shots.find(x => String(x.id) === String(id));
+            const modal = openModal(`<div class="bzp-modal-title">ℹ️ 這張用了什麼</div>${metaHtml(shot.meta)}
+                <div class="baozi-shot-actions"><button class="baozi-btn-small" data-a="restore">🎨 換回這個串</button><button class="baozi-btn-small" data-a="close">✕</button></div>`);
+            modal.querySelector('[data-a="close"]').addEventListener('click', () => modal.remove());
+            modal.querySelector('[data-a="restore"]').addEventListener('click', async () => {
+                try { await restoreArtist(shot.meta); alert(t('換回「' + (shot.meta.artist?.name || '') + '」了')); modal.remove(); } catch (e) { alert(t(e.message)); }
+            });
             return;
         }
         if (a === 'post') {

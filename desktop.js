@@ -144,6 +144,7 @@ const APPS = [
     ['shop', '🛍️', '商店', '#F7D4E6'],
     ['shot', '📸', '截圖', '#FFD6CE'],
     ['album', '🖼️', '相簿', '#E3D7F5'],
+    ['pics', '🎨', '生圖', '#D9ECFF'],
     ['dice', '🎲', '抽一則', '#C9E7DC'],
     ['notifications', '🔔', '通知', '#FFE9A8'],
     ['favs', '⭐', '收藏', '#FFE1C9'],
@@ -194,6 +195,7 @@ export async function renderDesktop(container, ui) {
         if (app === 'inbox') ui.go('inbox');
         if (app === 'game') ui.go('game');
         if (app === 'shop') ui.go('shop');
+        if (app === 'pics') ui.go('pics');
     };
     container.querySelector('.bz-apps').onclick = (ev) => openApp(ev.target.closest('[data-app]')?.dataset.app);
 

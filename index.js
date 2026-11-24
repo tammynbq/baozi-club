@@ -23,6 +23,8 @@ import { announceVersion, mountVersionChip } from './version.js';
 import { renderInboxScreen, inboxUnread } from './inbox.js';
 import { renderGameScreen, closeGame } from './game.js';
 import { renderShopScreen } from './shop.js';
+import { startPics } from './pics.js';
+import { renderPicsScreen } from './picset.js';
 import { mountMascot, greetIfNeeded, greetingEnabled, setGreetingEnabled, pokeMascot, showBubble, closeBubble, powerSaveOn, setPowerSave } from './xiaobaozi.js';
 
 const extensionName = "baozi-club";
@@ -1534,6 +1536,10 @@ function go(tab, opts = {}) {
             setActiveTab('');
             renderInboxScreen(body, { back: () => renderHomeScreen(body) });
             break;
+        case 'pics':
+            setActiveTab('');
+            renderPicsScreen(body, { back: () => renderHomeScreen(body) });
+            break;
         case 'favs':
             setActiveTab('');
             renderFavsScreen(body, { back: () => renderHomeScreen(body), copy: copyToClipboard });
@@ -2541,7 +2547,10 @@ function renderSettingsScreen(container) {
                 <div class="baozi-setup-section-title">🎲 骰子</div>
                 <div id="baozi-dice-settings"></div>
                 <hr style="margin: 18px 0; border-color: rgba(0,0,0,0.1);">
-                <div class="baozi-setup-section-title">✨ 排版模型（自訂 API）</div>
+                <div class="baozi-setup-section-title">🎨 生圖</div>
+                <button class="baozi-tag-chip" id="baozi-open-pics" style="margin-bottom:8px;">🎨 NovelAI 連線、寫 tag、固定外貌…</button>
+                <hr style="margin: 18px 0; border-color: rgba(0,0,0,0.1);">
+                <div class="baozi-setup-section-title">✨ 排版模型（自訂 API，生圖寫 tag 也用這裡的）</div>
                 <div id="baozi-ai-settings"></div>
                 <hr style="margin: 18px 0; border-color: rgba(0,0,0,0.1);">
                 <div class="baozi-setup-section-title">📮 報告克總</div>
@@ -2584,6 +2593,7 @@ function renderSettingsScreen(container) {
     renderAiSettings(document.getElementById('baozi-ai-settings'));
     renderReport(document.getElementById('baozi-report'));
     document.getElementById('baozi-open-inbox').addEventListener('click', () => go('inbox'));
+    document.getElementById('baozi-open-pics').addEventListener('click', () => go('pics'));
     document.getElementById('baozi-bot-logout').addEventListener('click', () => {
         if (confirm(t('登出？之後要到 Discord 打 /club 登入 重新拿碼。'))) {
             botLogout();
@@ -3032,6 +3042,7 @@ function makeModalDraggable(overlay) {
     startInboxCheck();
     installErrorCapture();
     startAutoMark();
+    try { startPics(); } catch (e) { console.warn('[包子同好會] 生圖沒開起來', e); }
     // 小包子一次只說一句：有更新要講就先講更新，今天的招呼留到下次打開
     if (isBotLoggedIn()) {
         setTimeout(async () => {

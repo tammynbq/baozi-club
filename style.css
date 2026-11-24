@@ -2378,3 +2378,87 @@ select.baozi-used-pick { width: auto; max-width: 9em; padding-right: 4px; }
 /* 📮 信箱裡的圖（2.13.0）：克總貼的、她附的，都直接顯示，點了看大圖 */
 .bz-ib-img { display: block; max-width: 100%; max-height: 320px; margin: 6px 0; border-radius: 10px; cursor: zoom-in;
     background: rgba(0,0,0,0.04); }
+
+/* ============================================================
+   🎨 生圖（pics.js）：訊息底下的生圖區、彈窗、設定頁
+   在聊天裡，所以跟著酒館的主題色（SmartTheme），不用包子奶油色
+   ============================================================ */
+.bzp-zone { margin: 8px 0 4px; display: flex; flex-direction: column; gap: 8px; font-size: 0.92em; }
+.bzp-chip, .bzp-actions button {
+    border: 1px solid var(--SmartThemeBorderColor, rgba(128,128,128,.35));
+    background: color-mix(in srgb, var(--SmartThemeBodyColor, #888) 8%, transparent);
+    color: var(--SmartThemeBodyColor, inherit); border-radius: 999px; padding: 4px 11px;
+    font-size: 0.9em; cursor: pointer; line-height: 1.5;
+}
+.bzp-chip { align-self: flex-start; opacity: .8; }
+.bzp-chip:hover, .bzp-actions button:hover { opacity: 1; filter: brightness(1.08); }
+.bzp-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.bzp-actions button:disabled { opacity: .5; cursor: default; }
+.bzp-actions .bzp-main, .bzp-actions .baozi-on {
+    background: color-mix(in srgb, var(--SmartThemeQuoteColor, #FFB5A7) 35%, transparent);
+    border-color: var(--SmartThemeQuoteColor, #FFB5A7); font-weight: 600;
+}
+.bzp-using { font-size: 0.85em; opacity: .75; cursor: pointer; word-break: break-all; }
+.bzp-using:hover { opacity: 1; }
+.bzp-card {
+    border: 1px solid var(--SmartThemeBorderColor, rgba(128,128,128,.3)); border-radius: 12px; padding: 8px 10px;
+    display: flex; flex-direction: column; gap: 6px;
+    background: color-mix(in srgb, var(--SmartThemeBodyColor, #888) 4%, transparent);
+}
+.bzp-card-head { font-size: 0.9em; }
+.bzp-img { max-width: 100%; max-height: 520px; width: auto; align-self: flex-start; border-radius: 10px; cursor: zoom-in; }
+.bzp-tags textarea, .bzp-entry textarea, .bzp-look textarea {
+    width: 100%; box-sizing: border-box; font-family: ui-monospace, Menlo, monospace; font-size: 12px;
+    border-radius: 8px; padding: 6px; resize: vertical;
+    background: var(--SmartThemeShadowColor, rgba(0,0,0,.05)); color: inherit;
+    border: 1px solid var(--SmartThemeBorderColor, rgba(128,128,128,.3));
+}
+.bzp-hint { font-size: 0.8em; opacity: .65; }
+.bzp-status { font-size: 0.85em; opacity: .85; }
+.bzp-foot { margin-top: -2px; }
+
+.bzp-modal { position: fixed; inset: 0; z-index: 100002; background: rgba(0,0,0,.45);
+    display: flex; align-items: center; justify-content: center; padding: 16px; box-sizing: border-box; }
+.bzp-modal-card {
+    width: min(520px, 100%); max-height: 86vh; overflow: auto; box-sizing: border-box; padding: 14px 16px;
+    border-radius: 16px; display: flex; flex-direction: column; gap: 8px;
+    background: var(--SmartThemeBlurTintColor, #fff8ec); color: var(--SmartThemeBodyColor, #5a3a28);
+    border: 1px solid var(--SmartThemeBorderColor, rgba(128,128,128,.3)); backdrop-filter: blur(12px);
+}
+.bzp-modal-card.bzp-wide { width: min(720px, 100%); }
+.bzp-modal-title { font-weight: 700; font-size: 1.05em; }
+.bzp-modal-card pre { white-space: pre-wrap; word-break: break-word; font-size: 12px; margin: 0;
+    padding: 6px 8px; border-radius: 8px; background: var(--SmartThemeShadowColor, rgba(0,0,0,.05)); }
+.bzp-modal-card .baozi-search { width: 100%; box-sizing: border-box; }
+.bzp-meta-title { font-weight: 600; }
+.bzp-meta-label { font-size: 0.8em; opacity: .65; margin-top: 2px; }
+.bzp-meta-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 2px 12px; font-size: 0.88em; }
+.bzp-meta-row { display: flex; justify-content: space-between; gap: 8px; }
+.bzp-meta-row span { opacity: .65; }
+.bzp-meta-row b { font-weight: 600; word-break: break-all; text-align: right; }
+.bzp-cats { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0; }
+.bzp-artists { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
+.bzp-artist { border-radius: 10px; overflow: hidden; cursor: pointer; border: 2px solid transparent;
+    background: var(--SmartThemeShadowColor, rgba(0,0,0,.05)); }
+.bzp-artist.on { border-color: var(--SmartThemeQuoteColor, #FFB5A7); }
+.bzp-artist img, .bzp-artist-ph { width: 100%; aspect-ratio: 1; object-fit: cover; display: flex;
+    align-items: center; justify-content: center; font-size: 26px; }
+.bzp-artist-name { font-size: 11px; padding: 3px 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bzp-entries { display: flex; flex-direction: column; gap: 10px; }
+.bzp-entry { display: flex; flex-direction: column; gap: 4px; }
+.bzp-entry-head { display: flex; gap: 6px; align-items: center; }
+.bzp-entry-head .baozi-search { flex: 1; min-width: 0; margin: 0; }
+.bzp-entry-head button, .bzp-look-head button { border: none; background: none; cursor: pointer; color: inherit; font-size: 14px; }
+.bzp-check { display: flex; gap: 6px; align-items: center; font-size: 0.9em; }
+
+/* 設定頁在包子面板裡：用包子的顏色 */
+#baozi-panel .bzp-hr { margin: 18px 0; border: none; border-top: 1px solid rgba(0,0,0,0.1); }
+#baozi-panel .bzp-label { font-size: 12px; color: var(--baozi-brown-soft); margin: 10px 0 2px; }
+#baozi-panel .bzp-form { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+#baozi-panel .bzp-actions button { background: var(--baozi-cream); color: var(--baozi-brown); border-color: var(--baozi-cream-dark); }
+#baozi-panel .bzp-actions .baozi-on { background: var(--baozi-peach-light); border-color: var(--baozi-peach); }
+#baozi-panel .bzp-look { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
+#baozi-panel .bzp-look-head { display: flex; gap: 6px; align-items: center; }
+#baozi-panel .bzp-look-head .baozi-search { flex: 1; margin: 0; }
+#baozi-panel .bzp-look textarea { background: #fff; color: var(--baozi-brown); border-color: var(--baozi-cream-dark); }
+#baozi-panel .bzp-hint { color: var(--baozi-brown-soft); }

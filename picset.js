@@ -359,10 +359,11 @@ function renderLooks(box) {
                     <button data-a="rm">🗑️</button>
                 </div>
                 <textarea data-f="tags" rows="2" placeholder="外貌 tag，例如 1boy, black hair, short hair, red eyes, tall" data-raw>${esc(l.tags)}</textarea>
+                <textarea data-f="nsfw" rows="2" placeholder="🔞 補充（只有 NSFW 的圖才加上去，可以留空）" data-raw>${esc(l.nsfw || '')}</textarea>
             </div>`).join('') || '<div class="baozi-setup-hint">還沒有</div>'}
         <button class="baozi-btn-small" data-a="add" data-scope="${scope}">＋ 加一個角色</button>`;
     box.innerHTML = `
-        <div class="baozi-setup-hint">副 API 畫到這些人時寫 $名字$，畫之前換成這裡的外貌 tag，每張圖的他才會長一樣。只寫不太會變的（髮色、瞳色、髮型、身材…），衣服表情讓副 API 照正文寫。</div>
+        <div class="baozi-setup-hint">副 API 畫到這些人時寫 $名字$，畫之前換成這裡的外貌 tag，每張圖的他才會長一樣。只寫不太會變的（髮色、瞳色、髮型、身材…），衣服表情讓副 API 照正文寫。「🔞 補充」只有 NSFW 的圖才加（小卡上的 🔞 亮著＝NSFW）。</div>
         ${card ? `<div class="bzp-label">這張卡（<span data-raw>${esc(ctx?.name2 || key)}</span>）</div>${list(card, 'card')}` : '<div class="baozi-setup-hint">開一個聊天，就能填這張卡的角色</div>'}
         <div class="bzp-label">每張卡都用（例如你自己）</div>
         ${list(s.looks.global, 'global')}`;
@@ -377,7 +378,7 @@ function renderLooks(box) {
     box.onclick = (ev) => {
         const btn = ev.target.closest('[data-a]');
         if (!btn) return;
-        if (btn.dataset.a === 'add') { arrOf(btn.dataset.scope).push({ name: '', tags: '' }); saveStore(); renderLooks(box); }
+        if (btn.dataset.a === 'add') { arrOf(btn.dataset.scope).push({ name: '', tags: '', nsfw: '' }); saveStore(); renderLooks(box); }
         if (btn.dataset.a === 'rm') {
             const row = btn.closest('.bzp-look');
             arrOf(row.dataset.scope).splice(Number(row.dataset.i), 1);

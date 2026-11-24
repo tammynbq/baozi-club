@@ -2462,3 +2462,4 @@ select.baozi-used-pick { width: auto; max-width: 9em; padding-right: 4px; }
 #baozi-panel .bzp-look-head .baozi-search { flex: 1; margin: 0; }
 #baozi-panel .bzp-look textarea { background: #fff; color: var(--baozi-brown); border-color: var(--baozi-cream-dark); }
 #baozi-panel .bzp-hint { color: var(--baozi-brown-soft); }
+#baozi-panel [hidden], .bzp-zone [hidden], .bzp-modal [hidden] { display: none !important; }

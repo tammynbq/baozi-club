@@ -101,13 +101,13 @@ function renderConns(box) {
                 <button class="baozi-on" data-a="save">💾 存</button><button data-a="test">🔌 測試</button><button data-a="cancel">取消</button>
             </div>
             <div class="baozi-setup-hint" data-k="msg"></div>`;
-        form.dataset.mode = mode;
+        form.dataset.connMode = mode;
         localizeLive(form);
     };
     const read = () => {
         const editing = loadConns().find(x => x.id === form.dataset.editing);
         const v = (k) => form.querySelector(`[data-f="${k}"]`);
-        const mode = form.dataset.mode;
+        const mode = form.dataset.connMode;
         return {
             id: editing?.id || newId(),
             name: v('name').value.trim() || (mode === 'custom' ? '第三方站' : 'NovelAI 官網'),
@@ -118,9 +118,9 @@ function renderConns(box) {
         };
     };
     box.onclick = async (ev) => {
-        const m = ev.target.closest('[data-mode]');
+        const m = ev.target.closest('button[data-mode]');
         if (m) {
-            form.dataset.mode = m.dataset.mode;
+            form.dataset.connMode = m.dataset.mode;
             form.querySelectorAll('[data-mode]').forEach(x => x.classList.toggle('active', x === m));
             form.querySelector('[data-f="url"]').hidden = m.dataset.mode !== 'custom';
             form.querySelector('.bzp-check').hidden = m.dataset.mode !== 'official';

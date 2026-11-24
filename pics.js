@@ -51,7 +51,9 @@ export function setActiveConn(id) {
 
 const DEFAULT_PREFS = {
     auto: false,          // 回完自動寫 tag、排隊畫
-    count: 1,             // 一則畫幾張（1～4）
+    count: 1,             // （舊的）一則畫幾張
+    countMin: 1,          // 一則畫幾到幾張
+    countMax: 1,
     tagApi: '',           // 寫 tag 用哪組 API（aidesign 的），空＝用排版那組
     promptId: 'builtin',  // 寫 tag 的提示詞
     lastChip: true,       // 最後一則老公的回覆底下顯示「🎨 生圖」
@@ -63,7 +65,11 @@ export function store() {
     const all = ctx?.extensionSettings || globalThis.extension_settings || {};
     all[EXT] ??= {};
     const s = all[EXT].pics ??= {};
-    s.prefs = { ...DEFAULT_PREFS, ...(s.prefs || {}) };
+    // 預設值補進同一個物件（不要換新的：設定頁拿著舊的那個在改，換掉就改不到了）
+    s.prefs ??= {};
+    for (const [k, v] of Object.entries(DEFAULT_PREFS)) if (!(k in s.prefs)) s.prefs[k] = v;
+    if (!('countMin' in s.prefs)) { s.prefs.countMin = s.prefs.countMax = Number(s.prefs.count) || 1; }
+    s.params ??= {};      // 沒裝智繪姬時，參數存這裡
     s.prompts ??= [];
     s.looks ??= { global: [], cards: {} };
     s.looks.global ??= [];
@@ -109,8 +115,13 @@ const FALLBACK = {
 };
 
 /** 現在的 NovelAI 參數（照智繪姬的欄位名；沒裝就用包子的預設）。 */
+/** 參數存在哪：有智繪姬就是它的設定，沒有就是包子自己的。 */
+function paramStore() {
+    return chatu8() || store().params;
+}
+
 export function currentParams() {
-    const c = chatu8() || {};
+    const c = paramStore();
     const g = (k) => (c[k] !== undefined && c[k] !== null && c[k] !== '' ? c[k] : FALLBACK[k]);
     return {
         model: String(g('novelaimode')),
@@ -210,9 +221,9 @@ function setField(id, value, checkbox = false) {
 const CHECKBOX_FIELDS = new Set(['sm', 'dyn', 'nai3Variety', 'nai3Deceisp', 'novelai_straight_alpha']);
 
 /** 參數寫回智繪姬：設定裡直接改（它沒載入也算數），畫面上的欄位也改（它自己會存）。 */
-function writeParams(params) {
-    const c = chatu8();
-    if (!c || !params) return;
+export function writeParams(params) {
+    const c = paramStore();
+    if (!params) return;
     const p = { ...params };
     const m = String(p.novelai_size || '').match(/^(\d+)x(\d+)$/);
     if (m) { p.novelai_width = m[1]; p.novelai_height = m[2]; }
@@ -220,9 +231,38 @@ function writeParams(params) {
         if (v === undefined || v === null || k === 'novelai_size') continue;
         const box = CHECKBOX_FIELDS.has(k);
         c[k] = box ? String(isOn(v) || v === 1) : String(v);
-        setField(k, box ? (isOn(v) || v === 1) : v, box);
+        if (chatu8()) setField(k, box ? (isOn(v) || v === 1) : v, box);
     }
-    if (p.novelai_size) setField('novelai_size', p.novelai_size);
+    if (p.novelai_size && chatu8()) setField('novelai_size', p.novelai_size);
+    saveStore();
+}
+
+/** NAI 切換助手的參數預設：{名字: {params}} */
+export function paramGroups() {
+    return npsParamGroups();
+}
+
+/** 智繪姬「角色管理」裡的角色：[{key, name, sfw, nsfw}] */
+export function chatu8Characters() {
+    const c = chatu8();
+    return Object.entries(c?.characterPresets || {})
+        .filter(([, p]) => p && typeof p === 'object')
+        .map(([key, p]) => ({ key, name: (p.nameCN || key).trim(), ...c8Looks(p) }))
+        .filter(x => x.name && (x.sfw || x.nsfw));
+}
+
+function c8Looks(p) {
+    return {
+        sfw: join(p.characterTraits, p.facialFeatures, p.upperBodySFW, p.fullBodySFW),
+        nsfw: join(p.upperBodyNSFW, p.fullBodyNSFW),
+    };
+}
+
+/** 固定外貌連到智繪姬的角色：每次畫都讀它現在的（在智繪姬改了包子也跟著）。 */
+export function linkedLooks(l) {
+    if (!l?.c8) return null;
+    const p = chatu8()?.characterPresets?.[l.c8];
+    return p ? c8Looks(p) : { sfw: '', nsfw: '', missing: true };
 }
 
 /**
@@ -662,7 +702,10 @@ export function seedLooks() {
 /** $名字$ → 外貌；NSFW 的圖再接上「🔞 補充」。 */
 export function expandLooks(tags, key = cardKey(), nsfw = false) {
     const map = new Map(looksFor(key)
-        .map(l => [l.name.trim(), join(l.tags, nsfw ? l.nsfw : '')])
+        .map(l => {
+            const c8 = linkedLooks(l);
+            return [l.name.trim(), join(c8?.sfw, l.tags, nsfw ? c8?.nsfw : '', nsfw ? l.nsfw : '')];
+        })
         .filter(([, v]) => v));
     return String(tags).replace(/\$([^$\n]{1,30})\$/g, (all, name) => map.get(name.trim()) ?? name.trim());
 }
@@ -670,7 +713,7 @@ export function expandLooks(tags, key = cardKey(), nsfw = false) {
 function looksText(key = cardKey()) {
     const list = looksFor(key);
     if (!list.length) return '（沒有）';
-    return list.map(l => `$${l.name}$${l.tags?.trim() ? '' : '（還沒填外貌，照正文寫）'}`).join('、')
+    return list.map(l => `$${l.name}$${l.tags?.trim() || linkedLooks(l)?.sfw ? '' : '（還沒填外貌，照正文寫）'}`).join('、')
         + '\n畫到這些角色時，外貌寫 $名字$ 就好。';
 }
 
@@ -743,6 +786,15 @@ function cleanTags(s) {
     return String(s).replace(/\n+/g, ', ').replace(/，/g, ',').replace(/\s*,\s*(,\s*)*/g, ', ').replace(/^[\s,]+|[\s,]+$/g, '');
 }
 
+/** 「2」或「1～3」 */
+export function countText() {
+    const pr = prefs();
+    let a = Math.max(1, Math.min(8, Number(pr.countMin) || 1));
+    let b = Math.max(1, Math.min(8, Number(pr.countMax) || a));
+    if (b < a) [a, b] = [b, a];
+    return a === b ? String(a) : `${a}～${b}`;
+}
+
 /** 讀這則正文，請副 API 寫 tag。回 [{scene, tags}]。 */
 export async function writeTags(mesText) {
     const profile = tagApiProfile();
@@ -752,7 +804,7 @@ export async function writeTags(mesText) {
         角色設定: characterText(),
         用戶人設: personaText(),
         固定外貌: looksText(),
-        張數: String(Math.max(1, Math.min(4, Number(prefs().count) || 1))),
+        張數: countText(),
     };
     const msgs = currentPrompt().entries
         .filter(e => e.enabled && String(e.content || '').trim())

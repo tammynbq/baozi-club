@@ -2407,7 +2407,7 @@ select.baozi-used-pick { width: auto; max-width: 9em; padding-right: 4px; }
 }
 .bzp-card-head { font-size: 0.9em; }
 .bzp-img { max-width: 100%; max-height: 520px; width: auto; align-self: flex-start; border-radius: 10px; cursor: zoom-in; }
-.bzp-tags textarea, .bzp-entry textarea, .bzp-look textarea {
+.bzp-tags textarea, .bzp-entry textarea, .bzp-look textarea, .bzp-ask textarea {
     width: 100%; box-sizing: border-box; font-family: ui-monospace, Menlo, monospace; font-size: 12px;
     border-radius: 8px; padding: 6px; resize: vertical;
     background: var(--SmartThemeShadowColor, rgba(0,0,0,.05)); color: inherit;
@@ -2485,6 +2485,11 @@ select.baozi-used-pick { width: auto; max-width: 9em; padding-right: 4px; }
 }
 .bzp-pill-mini.on, .bzp-pill-mini:hover { opacity: 1; }
 .bzp-tags { display: flex; flex-direction: column; gap: 6px; margin: 6px 0; }
+/* 提示詞有 {{用户需求}}：按「🎨 生圖」先問她想畫什麼 */
+.bzp-ask { display: flex; flex-direction: column; gap: 6px; margin: 6px 0; }
+/* 條目的觸發詞（智繪姬的「有觸發詞才送」） */
+.bzp-entry-keys { display: flex; gap: 6px; }
+.bzp-entry-keys .baozi-search { flex: 1; min-width: 0; margin: 0; font-size: 12px; }
 .bzp-switch {
     align-self: flex-start; text-align: left; border-radius: 10px; padding: 5px 10px; cursor: pointer; font-size: 0.9em;
     border: 1px solid var(--SmartThemeBorderColor, rgba(128,128,128,.35)); color: var(--SmartThemeBodyColor, inherit);

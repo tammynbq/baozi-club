@@ -58,6 +58,7 @@ const DEFAULT_PREFS = {
     tagApi: '',           // 寫 tag 用哪組 API（aidesign 的），空＝用排版那組
     promptId: 'builtin',  // 寫 tag 的提示詞
     lastChip: true,       // 最後一則老公的回覆底下顯示「🎨 生圖」
+    blockTags: '',        // 永遠不要出現的 tag（逗號或換行分開），畫之前拿掉
     ctxCount: 1,          // {{上下文}} 帶前面幾則 AI 訊息（一帆 11/25：智繪姬裡她設的是 1）
 };
 
@@ -381,6 +382,55 @@ function stripNotes(text) {
         .replace(/，/g, ',').replace(/\s*,\s*(,\s*)+/g, ', ').replace(/^[\s,]+|[\s,]+$/g, '');
 }
 
+// ---------- 🧹 去重複、屏蔽（11/26 一帆：AI 寫的 tag 很多重複的） ----------
+// 畫之前才做（🏷️ 裡看到的照原樣）。比較時不看大小寫、底線／空白、{} [] () 和加權寫法；
+// 重複的留第一個，但後面那個有加權、前面沒有的話換成有加權的（跟智繪姬一樣）。
+
+/** 照最外層的逗號切（{a, b} 這種括起來的一組不切開）。 */
+function splitTop(s) {
+    const out = [];
+    let depth = 0;
+    let cur = '';
+    for (const ch of String(s || '')) {
+        if ('{[('.includes(ch)) depth++;
+        else if ('}])'.includes(ch)) depth = Math.max(0, depth - 1);
+        if ((ch === ',' || ch === '，') && depth === 0) { out.push(cur); cur = ''; continue; }
+        cur += ch;
+    }
+    out.push(cur);
+    return out;
+}
+
+export const tagKey = (t) => String(t || '').toLowerCase()
+    .replace(/^\s*-?\d+(?:\.\d+)?::/, '').replace(/::\s*$/, '')
+    .replace(/[{}\[\]()]/g, '')
+    .replace(/:\s*-?\d+(?:\.\d+)?\s*$/, '')
+    .replace(/_/g, ' ').replace(/\s+/g, ' ').trim();
+const weighted = (t) => /[{}\[\]()]|::/.test(t);
+
+function blockSet() {
+    return new Set(String(prefs().blockTags || '').split(/[,，\n]/).map(tagKey).filter(Boolean));
+}
+
+/** 一串 tag：拿掉重複的、拿掉屏蔽清單裡的（block 傳空的 Set＝不屏蔽，負面用）。 */
+export function cleanList(text, block = blockSet()) {
+    const out = [];
+    const at = new Map();
+    for (const raw of splitTop(text)) {
+        const t = raw.trim();
+        const k = tagKey(t);
+        if (!k || block.has(k)) continue;
+        if (at.has(k)) {
+            const i = at.get(k);
+            if (!weighted(out[i]) && weighted(t)) out[i] = t;
+            continue;
+        }
+        at.set(k, out.length);
+        out.push(t);
+    }
+    return out.join(', ');
+}
+
 /**
  * @param tags 這張的 tag（$名字$ 已經換好）
  * @param opt {params, artist, seed}：沒給就讀現在的（同種子重畫時給當時的）
@@ -401,10 +451,11 @@ export function buildRequest(tags, opt = {}) {
     const charText = (opt.chars || []).map(c => c.prompt).join(', ');
     const body0 = nsfw && !hasNsfw(tags) && !hasNsfw(charText) ? join('nsfw', tags) : tags;
     // V3 沒有分角色：角色的 tag 接在後面
-    const positive = join(stripNotes(a.fixedPrompt), body0, v3 ? charText : '', stripNotes(a.fixedPrompt_end), quality);
+    const block = blockSet();
+    const positive = cleanList(join(stripNotes(a.fixedPrompt), body0, v3 ? charText : '', stripNotes(a.fixedPrompt_end), quality), block);
     const guard = !nsfw && !model.includes('curated') && !hasNsfw(positive) && !hasNsfw(charText) ? 'nsfw' : '';
-    const negative = join(guard, ucText(model, p.ucp), stripNotes(a.negativePrompt), opt.extraUC,
-        v3 ? (opt.chars || []).map(c => c.uc).join(', ') : '');
+    const negative = cleanList(join(guard, ucText(model, p.ucp), stripNotes(a.negativePrompt), opt.extraUC,
+        v3 ? (opt.chars || []).map(c => c.uc).join(', ') : ''), new Set());
     const seed = opt.seed ?? (['0', '', '-1'].includes(String(p.seed)) ? randomSeed() : Number(p.seed));
     const parameters = {
         params_version: v5 ? 4 : 3,
@@ -421,8 +472,8 @@ export function buildRequest(tags, opt = {}) {
     }
     if (v4 || v5) {
         const list = chars.map(c => ({
-            prompt: c.prompt.replace(/\b1(boy|girl|other)\b/gi, '$1'),
-            uc: c.uc || '',
+            prompt: cleanList(c.prompt.replace(/\b1(boy|girl|other)\b/gi, '$1'), block),
+            uc: cleanList(c.uc || '', new Set()),
             center: { x: c.center?.x ?? 0.5, y: c.center?.y ?? 0.5 },
         }));
         const coords = chars.some(c => c.center?.set);

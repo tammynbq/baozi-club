@@ -264,7 +264,10 @@ function renderTagPrefs(box) {
             <button class="baozi-tag-chip ${pr.auto ? '' : 'active'}" data-auto="0">✋ 手動：按了才寫 tag、按了才畫</button>
             <button class="baozi-tag-chip ${pr.auto ? 'active' : ''}" data-auto="1">⚡ 自動：回完就寫 tag，排隊一張張畫</button>
         </div>
-        <button class="baozi-tag-chip baozi-toggle-chip ${pr.lastChip ? 'active' : ''}" data-a="chip">${pr.lastChip ? '✓' : '○'} 最後一則老公的回覆底下顯示「🎨 生圖」</button>`;
+        <button class="baozi-tag-chip baozi-toggle-chip ${pr.lastChip ? 'active' : ''}" data-a="chip">${pr.lastChip ? '✓' : '○'} 最後一則老公的回覆底下顯示「🎨 生圖」</button>
+        <div class="bzp-label">🚫 不要出現的 tag</div>
+        <textarea class="bzp-block-tags" data-k="blockTags" rows="3" placeholder="逗號或換行分開，例如：watermark, signature">${esc(pr.blockTags || '')}</textarea>
+        <div class="baozi-setup-hint">畫之前從 tag 和畫師串裡拿掉（負面的不動）。重複的 tag 不用填，包子本來就會自動只留一個。</div>`;
     const chips = box.querySelector('[data-k="apis"]');
     const paintApis = () => {
         const apis = loadProfiles();
@@ -280,6 +283,11 @@ function renderTagPrefs(box) {
     manage.addEventListener('click', () => setTimeout(paintApis, 0));
     box.onchange = (ev) => {
         const k = ev.target.dataset.k;
+        if (k === 'blockTags') {
+            pr.blockTags = ev.target.value;
+            saveStore();
+            return;
+        }
         if (k === 'ctxCount') {
             pr.ctxCount = Math.max(0, Math.min(10, Math.round(Number(ev.target.value) || 0)));
             ev.target.value = pr.ctxCount;

@@ -12,6 +12,7 @@
 import { bot, botFetch, currentCharacter, activePrompt } from './bot.js';
 import { t, localizeLive } from './i18n.js';
 import { metaHtml, restoreArtist } from './pics.js';
+import { openViewer, saveAndTell } from './savefile.js';
 
 function esc(str) {
     return String(str ?? '').replace(/[&<>"']/g, c => ({
@@ -880,6 +881,7 @@ export async function renderAlbumScreen(container, ui) {
             <div class="baozi-album-actions">
                 ${s.meta ? '<button class="baozi-btn-small" data-a="meta" title="用了哪個畫師串">ℹ️</button>' : ''}
                 ${s.posted_url ? '<span class="baozi-lib-badge">已發</span>' : '<button class="baozi-btn-small" data-a="post">📤 發</button>'}
+                <button class="baozi-btn-small" data-a="dl" title="存到手機">⬇️</button>
                 <button class="baozi-btn-small" data-a="del">🗑️</button>
             </div>
         </div>`).join('');
@@ -897,6 +899,11 @@ export async function renderAlbumScreen(container, ui) {
             if (!confirm(t('刪掉這張？（已經發到 DC 的不會被收回）'))) return;
             await botFetch(`/club/shots/${id}`, { method: 'DELETE' });
             item.remove();
+            return;
+        }
+        if (a === 'dl') {
+            const src = item.querySelector('.baozi-album-thumb img')?.src;
+            if (src) saveAndTell(src, 'baozi-album'); else alert(t('圖還沒載好，等一下再按'));
             return;
         }
         if (a === 'meta') {
@@ -924,8 +931,9 @@ export async function renderAlbumScreen(container, ui) {
         const img = item.querySelector('.baozi-album-thumb img');
         if (img) {
             const modal = openModal(`<div class="baozi-shot-preview"><img src="${img.src}"></div>
-                <div class="baozi-shot-actions"><button class="baozi-btn-small" data-a="close">✕</button></div>`);
+                <div class="baozi-shot-actions"><button class="baozi-btn-small" data-a="dl">⬇️ 存到手機</button><button class="baozi-btn-small" data-a="close">✕</button></div>`);
             modal.querySelector('[data-a="close"]').addEventListener('click', () => modal.remove());
+            modal.querySelector('[data-a="dl"]').addEventListener('click', () => saveAndTell(img.src, 'baozi-album'));
         }
     });
 }
@@ -984,11 +992,7 @@ export async function renderFavsScreen(container, ui) {
             return;
         }
         if (a === 'img') {
-            const viewer = document.createElement('div');
-            viewer.className = 'baozi-chat-viewer';
-            viewer.innerHTML = `<img src="${ev.target.closest('img').src}" alt="">`;
-            viewer.addEventListener('click', () => viewer.remove());
-            document.body.appendChild(viewer);
+            openViewer(ev.target.closest('img').src, 'baozi-fav');
             return;
         }
         if (a !== 'toggle') return;

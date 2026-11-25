@@ -15,6 +15,7 @@
 import { bot } from './bot.js';
 import { loadProfiles, activeProfile, callModel } from './aidesign.js';
 import { localizeLive, t } from './i18n.js';
+import { openViewer, saveAndTell } from './savefile.js';
 
 const EXT = 'baozi-club';
 const KEY_CONNS = 'baozi_nai_conns';
@@ -1355,6 +1356,7 @@ function itemHtml(it, i) {
             <button data-p="draw">🔁 重畫</button>
             <button data-p="tagview" class="${tagOpen ? 'bzp-main' : ''}">🏷️ tag</button>
             <button data-p="info">ℹ️</button>
+            <button data-p="dl" title="存到手機">⬇️</button>
             <button data-p="album">${it.album ? '✓ 已存相簿' : '🥟 存相簿'}</button>
             <button data-p="remove" title="拿掉這張">🗑️</button>
         </div>
@@ -1740,11 +1742,7 @@ export async function openArtistPicker(onDone = () => {}) {
 }
 
 function viewImage(src) {
-    const v = document.createElement('div');
-    v.className = 'baozi-chat-viewer';
-    v.innerHTML = `<img src="${esc(src)}" alt="">`;
-    v.addEventListener('click', () => v.remove());
-    document.body.appendChild(v);
+    openViewer(src, 'baozi-pic');
 }
 
 
@@ -1782,6 +1780,7 @@ function onZoneClick(ev) {
         return;
     }
     if (a === 'view') { viewImage(btn.getAttribute('src')); return; }
+    if (a === 'dl') { const { item } = findItem(mesId, itemId); if (item?.img) saveAndTell(item.img, 'baozi-pic'); return; }
     if (a === 'album') { if (!findItem(mesId, itemId).item?.album) saveAlbum(mesId, itemId, btn); return; }
     if (a === 'remove') {
         if (!confirm(t('拿掉這張？（存在酒館的圖檔不會刪）'))) return;

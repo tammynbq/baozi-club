@@ -2046,6 +2046,12 @@ body.baozi-selecting #chat .baozi-sel-copy { cursor: pointer; }
     cursor: zoom-out;
 }
 .baozi-chat-viewer img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 6px; }
+/* 大圖底下的「⬇️ 存到手機」（iPhone 上酒館常常不給長按存圖） */
+.baozi-viewer-save {
+    position: absolute; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%);
+    padding: 8px 18px; border-radius: 999px; border: none; cursor: pointer; font-size: 14px;
+    background: rgba(255, 255, 255, 0.92); color: #333; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+}
 
 /* ---------- 🎨 換排版 ---------- */
 .baozi-tpl-chips { display: flex; gap: 6px; overflow-x: auto; flex-wrap: nowrap; padding-bottom: 2px; scrollbar-width: none; }

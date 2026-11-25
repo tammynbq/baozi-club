@@ -256,6 +256,9 @@ function renderTagPrefs(box) {
             <span class="bzp-hint" data-k="countHint">（現在：${countText()} 張）</span>
         </div>
         <div class="baozi-setup-hint">兩個填一樣就是固定張數；不一樣就讓副 API 照劇情決定畫幾張。</div>
+        <div class="bzp-label">{{上下文}} 帶前面幾則 AI 訊息</div>
+        <div class="bzp-count"><input type="number" data-k="ctxCount" value="${pr.ctxCount ?? 1}" min="0" max="10"> 則</div>
+        <div class="baozi-setup-hint">提示詞裡有 {{上下文}} 才用得到（智繪姬的預設常有）；畫的那一則本身在 {{正文}} 裡，不會重複送。</div>
         <div class="bzp-label">什麼時候畫</div>
         <div class="bzp-cats">
             <button class="baozi-tag-chip ${pr.auto ? '' : 'active'}" data-auto="0">✋ 手動：按了才寫 tag、按了才畫</button>
@@ -277,6 +280,12 @@ function renderTagPrefs(box) {
     manage.addEventListener('click', () => setTimeout(paintApis, 0));
     box.onchange = (ev) => {
         const k = ev.target.dataset.k;
+        if (k === 'ctxCount') {
+            pr.ctxCount = Math.max(0, Math.min(10, Math.round(Number(ev.target.value) || 0)));
+            ev.target.value = pr.ctxCount;
+            saveStore();
+            return;
+        }
         if (k !== 'countMin' && k !== 'countMax') return;
         pr[k] = Math.max(1, Math.min(8, Number(ev.target.value) || 1));
         ev.target.value = pr[k];
@@ -313,11 +322,23 @@ function download(name, text) {
     setTimeout(() => URL.revokeObjectURL(url), 30_000);
 }
 
-/** 匯入：包子自己的格式、或酒館預設 JSON（prompts＋prompt_order）。 */
-function readPromptFile(text, fileName) {
+/** 智繪姬的條目：「有觸發詞才送」的把觸發詞帶過來（keys／andKeys）。 */
+function fromC8(e) {
+    const out = { name: String(e?.name || ''), role: e?.role || 'system', content: String(e?.content || ''), enabled: e?.enabled !== false };
+    if (e?.keys !== undefined) out.keys = e.keys;
+    if (e?.andKeys !== undefined) out.andKeys = e.andKeys;
+    if (e?.triggerMode === 'trigger') { out.keys = e.triggerWords || ''; out.andKeys = e.andTriggerWords || ''; }
+    return out;
+}
+
+/** 匯入：包子自己的格式、智繪姬的 LLM 預設、或酒館預設 JSON（prompts＋prompt_order）。回一份或好幾份。 */
+export function readPromptFile(text, fileName) {
     const j = JSON.parse(String(text).replace(/^﻿/, ''));
-    if (j?.type === PROMPT_TYPE && Array.isArray(j.entries)) return { name: j.name || fileName, entries: j.entries };
-    if (Array.isArray(j?.entries) && j.name) return { name: j.name, entries: j.entries };     // 喵喵的 v2 也是這個樣子
+    if (j?.type === PROMPT_TYPE && Array.isArray(j.entries)) return { name: j.name || fileName, entries: j.entries.map(fromC8) };
+    if (Array.isArray(j?.entries) && j.name) return { name: j.name, entries: j.entries.map(fromC8) };     // 喵喵的 v2 也是這個樣子
+    // 智繪姬匯出的：{ "預設名": { entries: [...] } }，一個檔案可能有好幾份（11/25 一帆的）
+    const c8 = j && typeof j === 'object' && !Array.isArray(j) ? Object.keys(j).filter(k => Array.isArray(j[k]?.entries)) : [];
+    if (c8.length) return c8.map(k => ({ name: k, entries: j[k].entries.map(fromC8) }));
     if (Array.isArray(j?.prompts) && Array.isArray(j?.prompt_order)) {
         const byId = new Map(j.prompts.filter(p => p?.identifier).map(p => [p.identifier, p]));
         const order = j.prompt_order.find(o => String(o?.character_id) === '100001')?.order || j.prompt_order[0]?.order || [];
@@ -383,13 +404,13 @@ function renderPrompts(box) {
         const f = ev.target.files?.[0];
         if (!f) return;
         try {
-            const got = readPromptFile(await f.text(), f.name);
-            if (!got.entries.length) throw new Error('裡面沒有條目');
-            s.prompts.push({ id: newId(), name: got.name, entries: got.entries });
+            const list = [readPromptFile(await f.text(), f.name)].flat().filter(g => g.entries.length);
+            if (!list.length) throw new Error('裡面沒有條目');
+            for (const got of list) s.prompts.push({ id: newId(), name: got.name, entries: got.entries });
             prefs().promptId = s.prompts.at(-1).id;
             saveStore();
             renderPrompts(box);
-            globalThis.toastr?.success?.(t(`匯入「${got.name}」了（${got.entries.length} 條）`));
+            for (const got of list) globalThis.toastr?.success?.(t(`匯入「${got.name}」了（${got.entries.length} 條）`));
         } catch (e) {
             alert(t('匯入失敗：' + e.message));
         }
@@ -412,6 +433,10 @@ function openPromptEditor(p, onDone) {
                 <button data-a="up" title="往上">↑</button><button data-a="down" title="往下">↓</button><button data-a="rm" title="刪掉">🗑️</button>
             </div>
             <textarea data-f="content" rows="6" data-raw>${esc(e.content)}</textarea>
+            <div class="bzp-entry-keys">
+                <input type="text" class="baozi-search" data-f="keys" value="${esc(e.keys || '')}" placeholder="觸發詞（逗號分開；空著＝一直送）">
+                <input type="text" class="baozi-search" data-f="andKeys" value="${esc(e.andKeys || '')}" placeholder="同時要有（可以空著）">
+            </div>
         </div>`;
     const paint = () => {
         m.innerHTML = `<div class="bzp-modal-card bzp-wide">
@@ -430,6 +455,10 @@ function openPromptEditor(p, onDone) {
             e.name = el.querySelector('[data-f="name"]').value;
             e.role = el.querySelector('[data-f="role"]').value;
             e.content = el.querySelector('[data-f="content"]').value;
+            const keys = el.querySelector('[data-f="keys"]').value.trim();
+            const andKeys = el.querySelector('[data-f="andKeys"]').value.trim();
+            if (keys) e.keys = keys; else delete e.keys;
+            if (andKeys) e.andKeys = andKeys; else delete e.andKeys;
         });
         saveStore();
     };

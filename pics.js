@@ -57,6 +57,7 @@ const DEFAULT_PREFS = {
     tagApi: '',           // 寫 tag 用哪組 API（aidesign 的），空＝用排版那組
     promptId: 'builtin',  // 寫 tag 的提示詞
     lastChip: true,       // 最後一則老公的回覆底下顯示「🎨 生圖」
+    ctxCount: 1,          // {{上下文}} 帶前面幾則 AI 訊息（一帆 11/25：智繪姬裡她設的是 1）
 };
 
 /** 不是祕密的東西放酒館的擴充設定：prefs、提示詞、固定外貌。 */
@@ -394,10 +395,15 @@ export function buildRequest(tags, opt = {}) {
     const quality = p.quality ? (QUALITY[model] || '') : '';
     // 🔞 NSFW 的圖：tag 裡沒有 nsfw 就補一個；不是的圖：負面加 nsfw（跟 NovelAI 官網一樣，curated 型號不用）
     const nsfw = !!opt.nsfw;
-    const body0 = nsfw && !hasNsfw(tags) ? join('nsfw', tags) : tags;
-    const positive = join(stripNotes(a.fixedPrompt), body0, stripNotes(a.fixedPrompt_end), quality);
-    const guard = !nsfw && !model.includes('curated') && !hasNsfw(positive) ? 'nsfw' : '';
-    const negative = join(guard, ucText(model, p.ucp), stripNotes(a.negativePrompt));
+    // 分角色（V4 以上）：每個角色自己的 tag、位置、負面；角色 prompt 裡 1boy／1girl 寫成 boy／girl（NovelAI 建議的）
+    const chars = (v4 || v5) ? (opt.chars || []).filter(c => c?.prompt) : [];
+    const charText = (opt.chars || []).map(c => c.prompt).join(', ');
+    const body0 = nsfw && !hasNsfw(tags) && !hasNsfw(charText) ? join('nsfw', tags) : tags;
+    // V3 沒有分角色：角色的 tag 接在後面
+    const positive = join(stripNotes(a.fixedPrompt), body0, v3 ? charText : '', stripNotes(a.fixedPrompt_end), quality);
+    const guard = !nsfw && !model.includes('curated') && !hasNsfw(positive) && !hasNsfw(charText) ? 'nsfw' : '';
+    const negative = join(guard, ucText(model, p.ucp), stripNotes(a.negativePrompt), opt.extraUC,
+        v3 ? (opt.chars || []).map(c => c.uc).join(', ') : '');
     const seed = opt.seed ?? (['0', '', '-1'].includes(String(p.seed)) ? randomSeed() : Number(p.seed));
     const parameters = {
         params_version: v5 ? 4 : 3,
@@ -413,10 +419,16 @@ export function buildRequest(tags, opt = {}) {
         parameters.sm_dyn = p.sm && p.dyn;
     }
     if (v4 || v5) {
-        parameters.use_coords = false;
-        parameters.characterPrompts = [];
-        parameters.v4_prompt = { caption: { base_caption: positive, char_captions: [] }, use_coords: false, use_order: true };
-        parameters.v4_negative_prompt = { caption: { base_caption: negative, char_captions: [] }, legacy_uc: false };
+        const list = chars.map(c => ({
+            prompt: c.prompt.replace(/\b1(boy|girl|other)\b/gi, '$1'),
+            uc: c.uc || '',
+            center: { x: c.center?.x ?? 0.5, y: c.center?.y ?? 0.5 },
+        }));
+        const coords = chars.some(c => c.center?.set);
+        parameters.use_coords = coords;
+        parameters.characterPrompts = list.map(c => ({ prompt: c.prompt, uc: c.uc, center: c.center, enabled: true }));
+        parameters.v4_prompt = { caption: { base_caption: positive, char_captions: list.map(c => ({ char_caption: c.prompt, centers: [c.center] })) }, use_coords: coords, use_order: true };
+        parameters.v4_negative_prompt = { caption: { base_caption: negative, char_captions: list.map(c => ({ char_caption: c.uc, centers: [c.center] })) }, legacy_uc: false };
     }
     if (p.variety && !v5) {
         // Variety+：照官網的算法（V4.5 用 58，其他 19；跟畫面大小有關）
@@ -444,6 +456,7 @@ export function buildRequest(tags, opt = {}) {
         artist: { name: a.name, fixedPrompt: a.fixedPrompt, fixedPrompt_end: a.fixedPrompt_end, negativePrompt: a.negativePrompt },
         params: { ...p, seed: String(seed) },
         model: sendModel, seed, tags, positive, negative, nsfw,
+        ...(chars.length ? { chars: chars.map(c => ({ prompt: c.prompt, uc: c.uc, center: c.center })) } : {}),
         at: new Date().toISOString(),
     };
     return { body, meta };
@@ -702,13 +715,180 @@ export function seedLooks() {
 
 /** $名字$ → 外貌；NSFW 的圖再接上「🔞 補充」。 */
 export function expandLooks(tags, key = cardKey(), nsfw = false) {
-    const map = new Map(looksFor(key)
-        .map(l => {
-            const c8 = linkedLooks(l);
-            return [l.name.trim(), join(c8?.sfw, l.tags, nsfw ? c8?.nsfw : '', nsfw ? l.nsfw : '')];
-        })
-        .filter(([, v]) => v));
-    return String(tags).replace(/\$([^$\n]{1,30})\$/g, (all, name) => map.get(name.trim()) ?? name.trim());
+    return expandCalls(tags, key, nsfw).tags;
+}
+
+// ---------- 🎭 智繪姬的角色／服裝調用（11/25 一帆的預設） ----------
+// 它的預設叫模型寫 $角色名-from front-sfw-upperBody-nsfw-lowerBody$、${"name":"角色名","angle":"from front","upperBody":"sfw","lowerBody":"hidden"}$、
+// 服裝 $服裝名-upperBody-lowerBody$／${"name":"服裝名","upperBody":"visible"}$。照智繪姬「角色管理」裡的角色、服裝換成 tag：
+// 上半身看得到才放五官＋上半身那欄，下半身照 sfw／nsfw 放那欄；角度有 from behind 就用背面那幾欄（沒填的用正面；服裝跟著前一個角色的角度）。
+
+const normName = (s) => String(s || '').replace(/[\s\u3000_]+/g, '').toLowerCase();
+
+/** 照名字找智繪姬的角色（kind=char）或服裝（kind=outfit）：一樣的優先，再來是互相包含的。 */
+function c8Find(kind, name) {
+    const c = chatu8();
+    const pool = kind === 'char' ? c?.characterPresets : c?.outfitPresets;
+    const want = normName(name);
+    if (!pool || !want) return null;
+    let best = null;
+    let score = 0;
+    for (const [id, p] of Object.entries(pool)) {
+        if (!p || typeof p !== 'object') continue;
+        const names = [id, ...String(p.nameCN || '').split('|'), ...String(p.nameEN || '').split('|')].map(normName).filter(Boolean);
+        for (const n of names) {
+            const sc = n === want ? 2 : (want.includes(n) || n.includes(want)) ? 1 : 0;
+            if (sc > score) { score = sc; best = p; }
+        }
+    }
+    return best;
+}
+
+function c8CharTags(p, angle, upper, lower) {
+    const back = /from\s*behind/i.test(angle || '');
+    // 背面那欄沒填就用正面的（智繪姬會直接空著，衣服就不見了）
+    const f = (k) => (back && p[k + 'Back']) || p[k] || '';
+    const parts = [p.characterTraits];
+    if (upper && upper !== 'hidden') {
+        parts.push(f('facialFeatures'));
+        if (upper === 'sfw') parts.push(f('upperBodySFW'));
+        if (upper === 'nsfw') parts.push(f('upperBodyNSFW'));
+    }
+    if (lower === 'sfw') parts.push(f('fullBodySFW'));
+    if (lower === 'nsfw') parts.push(f('fullBodyNSFW'));
+    return join(...parts);
+}
+
+function c8OutfitTags(o, behind, upper, lower) {
+    const f = (k) => (behind && o[k + 'Back']) || o[k] || '';
+    return join(upper ? f('upperBody') : '', lower ? f('fullBody') : '');
+}
+
+/** 包子自己的固定外貌（名字 → sfw 外貌、🔞 補充）。 */
+function ownLooks(key) {
+    const map = new Map();
+    for (const l of looksFor(key)) {
+        const c8 = linkedLooks(l);
+        const sfw = join(c8?.sfw, l.tags);
+        const more = join(c8?.nsfw, l.nsfw);
+        if (sfw || more) map.set(l.name.trim(), { sfw, nsfw: more });
+    }
+    return map;
+}
+
+/**
+ * 換掉 tag 裡所有 $…$：包子的 $名字$、智繪姬的角色／服裝調用。
+ * @returns {tags, uc}：uc＝用到的智繪姬角色自己的負面
+ */
+export function expandCalls(tags, key = cardKey(), nsfw = false) {
+    const own = ownLooks(key);
+    const uc = [];
+    let behind = false;
+    const charCall = (name, angle, upper, lower) => {
+        behind = /from\s*behind/i.test(angle || '');
+        const p = c8Find('char', name);
+        if (p) {
+            if (p.negative) uc.push(p.negative);
+            return c8CharTags(p, angle, upper, lower);
+        }
+        const l = own.get(String(name).trim());
+        if (l) return join(l.sfw, upper === 'nsfw' || lower === 'nsfw' ? l.nsfw : '');
+        return null;
+    };
+    const outfitCall = (name, upper, lower) => {
+        const o = c8Find('outfit', name);
+        return o ? c8OutfitTags(o, behind, upper, lower) : null;
+    };
+    const out = String(tags || '').replace(/\$([^$\n]{1,300})\$/g, (all, raw) => {
+        const body = raw.trim();
+        if (body.startsWith('{') && body.endsWith('}')) {
+            let j = null;
+            try { j = JSON.parse(body); } catch { /* 不是 JSON */ }
+            if (j?.name) {
+                const st = (v, dflt) => String(v || dflt).toLowerCase();
+                const got = 'angle' in j
+                    ? charCall(j.name, j.angle, st(j.upperBody, 'hidden'), st(j.lowerBody, 'hidden'))
+                    : outfitCall(j.name, st(j.upperBody, 'hidden') === 'visible', st(j.lowerBody, 'hidden') === 'visible');
+                return got ?? String(j.name);
+            }
+        }
+        let m = body.match(/^(.+?)-(sfw|nsfw)-upperbody(?:-(sfw|nsfw)-(?:lowerbody|fullbody))?$/i)
+            || body.match(/^(.+?)()-(sfw|nsfw)-lowerbody$/i);
+        if (m) {
+            const [, nameAngle, up, low] = m;
+            const cut = nameAngle.indexOf('-');
+            const name = cut > 0 ? nameAngle.slice(0, cut) : nameAngle;
+            const angle = cut > 0 ? nameAngle.slice(cut + 1) : '';
+            const got = charCall(name, angle, (up || '').toLowerCase() || null, (low || '').toLowerCase() || null)
+                ?? (cut > 0 ? charCall(nameAngle, '', (up || '').toLowerCase() || null, (low || '').toLowerCase() || null) : null);
+            return got ?? name.trim();
+        }
+        m = body.match(/^(.+?)-upperbody(-lowerbody)?$/i);
+        if (m) return outfitCall(m[1], true, !!m[2]) ?? m[1].trim();
+        m = body.match(/^(.+?)-lowerbody$/i);
+        if (m) return outfitCall(m[1], false, true) ?? m[1].trim();
+        // 包子的 $名字$
+        const l = own.get(body);
+        if (l) return join(l.sfw, nsfw ? l.nsfw : '');
+        const p = c8Find('char', body);
+        if (p) { if (p.negative) uc.push(p.negative); return c8CharTags(p, '', 'sfw', nsfw ? 'nsfw' : 'sfw'); }
+        return body;
+    });
+    return { tags: out, uc: join(...uc) };
+}
+
+// ---------- 👥 NovelAI V4 的分角色：Scene Composition＋Character N Prompt／UC ----------
+// 智繪姬的寫法：Scene Composition: …; Character 1 Prompt: … |centers:C3; Character 1 UC: …;
+// 座標 A～E（左到右）、1～5（上到下）換成 0.1～0.9。
+
+const END = '(?:;|(?=Character\\s+\\d+\\s+(?:Prompt|UC)\\s*:)|$)';
+const tidy = (s) => String(s || '').replace(/\s*\n\s*/g, ', ').replace(/^[\s,;]+|[\s,;]+$/g, '').replace(/\s*,\s*(,\s*)+/g, ', ').trim();
+
+function toCenter(s) {
+    const t0 = String(s || '').trim();
+    const g = t0.match(/([a-e])\s*([1-5])/i);
+    if (g) return { x: [0.1, 0.3, 0.5, 0.7, 0.9]['abcde'.indexOf(g[1].toLowerCase())], y: [0.1, 0.3, 0.5, 0.7, 0.9][Number(g[2]) - 1], set: true };
+    const n = t0.match(/([-+]?[0-9.]+)\s*[,，\s]\s*([-+]?[0-9.]+)/);
+    if (n) {
+        const c = (v) => Number(Math.min(1, Math.max(0, parseFloat(v))).toFixed(3));
+        return { x: c(n[1]), y: c(n[2]), set: true };
+    }
+    return { x: 0.5, y: 0.5, set: false };
+}
+
+/** 分角色的 tag 拆開：{base, chars:[{prompt, uc, center}]}；不是這種寫法回 null。 */
+export function splitScene(tags) {
+    const s = String(tags || '');
+    const first = s.search(/Character\s+\d+\s+Prompt\s*:/i);
+    if (first < 0) return null;
+    // 沒寫 Scene Composition 的話，第一個 Character 前面的就是共用的
+    const base = s.match(new RegExp('Scene\\s*Composition\\s*:([\\s\\S]*?)' + END, 'i'))?.[1] ?? s.slice(0, first);
+    const chars = new Map();
+    for (const m of s.matchAll(new RegExp('Character\\s+(\\d+)\\s+Prompt\\s*:([\\s\\S]*?)(?:\\|\\s*centers?\\s*:\\s*([^;|]*?))?\\s*' + END, 'gi'))) {
+        const prompt = tidy(m[2]);
+        if (prompt) chars.set(Number(m[1]), { prompt, uc: '', center: toCenter(m[3]) });
+    }
+    for (const m of s.matchAll(new RegExp('Character\\s+(\\d+)\\s+UC\\s*:([\\s\\S]*?)' + END, 'gi'))) {
+        const c = chars.get(Number(m[1]));
+        if (c) c.uc = tidy(m[2]);
+    }
+    if (!chars.size) return null;
+    return { base: tidy(base), chars: [...chars.entries()].sort((a, b) => a[0] - b[0]).map(([, c]) => c) };
+}
+
+/** 畫之前：拆分角色、換掉 $…$。回 {base, chars, uc}。 */
+export function prepTags(raw, key = cardKey(), nsfw = false) {
+    const scene = splitScene(raw);
+    if (!scene) {
+        const r = expandCalls(raw, key, nsfw);
+        return { base: r.tags, chars: [], uc: r.uc };
+    }
+    const base = expandCalls(scene.base, key, nsfw);
+    const chars = scene.chars.map(c => {
+        const r = expandCalls(c.prompt, key, nsfw);
+        return { ...c, prompt: r.tags, uc: join(c.uc, r.uc) };
+    });
+    return { base: base.tags, chars, uc: base.uc };
 }
 
 function looksText(key = cardKey()) {
@@ -749,20 +929,205 @@ function personaText() {
 
 function stripForTags(text) {
     return String(text || '')
-        .replace(/<(think|thinking|reasoning)>[\s\S]*?<\/\1>/gi, '')
+        .replace(THINK, '')
         .replace(/<[^>]+>/g, '')
         .replace(/\n{3,}/g, '\n\n')
         .trim();
 }
 
 // 一帆用簡體寫預設（11/24：{{角色设定}} 包子不認、原樣送出去了），所以每個變數簡繁都收
+// 上下文、世界書觸發、用戶需求、三個啟用列表：照智繪姬的（11/25 一帆的預設用到）
 const VAR_ALIASES = {
     正文: ['正文'],
     角色設定: ['角色設定', '角色设定'],
     用戶人設: ['用戶人設', '用户人设', '用户人設', '用戶人设'],
     固定外貌: ['固定外貌'],
     張數: ['張數', '张数'],
+    上下文: ['上下文'],
+    世界書觸發: ['世界書觸發', '世界书触发', '世界書', '世界书'],
+    用戶需求: ['用戶需求', '用户需求'],
+    角色啟用列表: ['角色啟用列表', '角色启用列表'],
+    通用角色啟用列表: ['通用角色啟用列表', '通用角色启用列表'],
+    通用服裝啟用列表: ['通用服裝啟用列表', '通用服装启用列表'],
 };
+
+const THINK = /<(think|thinking|reasoning|imgthink|tag_think|imagesthink)>[\s\S]*?<\/\1>/gi;
+
+/** 這條提示詞有沒有用到某個變數（簡繁都算）。 */
+function usesVar(text, k) {
+    return (VAR_ALIASES[k] || [k]).some(n => String(text).includes(`{{${n}}}`));
+}
+
+/** 寫 tag 的提示詞有沒有 {{用户需求}}：有的話按「🎨 生圖」先問她想畫什麼。 */
+export function wantsDemand() {
+    return currentPrompt().entries.some(e => e.enabled && usesVar(e.content, '用戶需求'));
+}
+
+// ---------- 🔑 觸發詞（智繪姬的「有觸發詞才送」）：keys 任一個出現在正文才送；andKeys 有填的話也要有一個 ----------
+function splitWords(s) {
+    return String(s || '').split(/[,，]/).map(w => w.trim()).filter(Boolean);
+}
+export function entryOn(e, text) {
+    const keys = splitWords(e.keys);
+    if (!keys.length) return true;
+    if (!keys.some(w => text.includes(w))) return false;
+    const and = splitWords(e.andKeys);
+    return !and.length || and.some(w => text.includes(w));
+}
+
+// ---------- 📜 上下文：畫的那一則前面的 AI 訊息（設定幾則，預設 1） ----------
+function contextText(mesId) {
+    const chat = stx()?.chat;
+    const n = Math.max(0, Math.min(10, Number(prefs().ctxCount ?? 1)));
+    if (!chat || !Number.isFinite(mesId) || !n) return '';
+    const got = [];
+    for (let i = mesId - 1; i >= 0 && got.length < n; i--) {
+        if (isHusbandMes(chat[i])) got.unshift(stripForTags(chat[i].mes).slice(0, 6000));
+    }
+    return got.join('\n\n');
+}
+
+// ---------- 📖 世界書觸發：這張卡的世界書、聊天的世界書、全域開著的，關鍵字出現在正文的條目 ----------
+async function worldText(trigger) {
+    const ctx = stx();
+    const names = new Set();
+    const ch = ctx?.characters?.[ctx?.characterId];
+    if (ch?.data?.extensions?.world) names.add(ch.data.extensions.world);
+    if (ctx?.chatMetadata?.world_info) names.add(ctx.chatMetadata.world_info);
+    try { document.querySelectorAll('#world_info option:checked').forEach(o => { if (o.textContent?.trim()) names.add(o.textContent.trim()); }); } catch { /* */ }
+    if (!names.size || typeof ctx?.loadWorldInfo !== 'function') return '';
+    const low = trigger.toLowerCase();
+    const hit = (k) => {
+        const w = String(k || '').trim();
+        if (!w) return false;
+        const re = w.match(/^\/(.+)\/([a-z]*)$/);
+        if (re) { try { return new RegExp(re[1], re[2]).test(trigger); } catch { return false; } }
+        return low.includes(w.toLowerCase());
+    };
+    const out = [];
+    for (const name of names) {
+        let data = null;
+        try { data = await ctx.loadWorldInfo(name); } catch { /* 讀不到就跳過 */ }
+        for (const e of Object.values(data?.entries || {})) {
+            if (!e || e.disable || !String(e.content || '').trim()) continue;
+            if (!e.constant) {
+                if (!(e.key || []).some(hit)) continue;
+                const sec = (e.keysecondary || []).filter(k => String(k).trim());
+                if (e.selective && sec.length) {
+                    const n = sec.filter(hit).length;
+                    const logic = Number(e.selectiveLogic) || 0;   // 0 有任一、1 不是全部、2 一個都沒有、3 全部都有
+                    const ok = logic === 0 ? n > 0 : logic === 1 ? n < sec.length : logic === 2 ? n === 0 : n === sec.length;
+                    if (!ok) continue;
+                }
+            }
+            out.push({ order: Number(e.order) || 0, content: e.content.trim() });
+        }
+    }
+    return out.sort((a, b) => a.order - b.order).map(x => x.content).join('\n\n').slice(0, 12000);
+}
+
+// ---------- 🎭 智繪姬的三個啟用列表（照她在智繪姬選的「注入模板」，沒有就用智繪姬預設的那種排法） ----------
+const C8_TPL = {
+    char: ['中文名称：{nameCN}', '英文名称：{nameEN}', '角色特征：{traits}', '五官外貌（正面）：{facial}', '五官外貌（背面）：{facialBack}',
+        '上半身SFW（正面）：{upperSFW}', '上半身SFW（背面）：{upperSFWBack}', '下半身SFW（正面）：{lowerSFW}', '下半身SFW（背面）：{lowerSFWBack}',
+        '上半身NSFW（正面）：{upperNSFW}', '上半身NSFW（背面）：{upperNSFWBack}', '下半身NSFW（正面）：{lowerNSFW}', '下半身NSFW（背面）：{lowerNSFWBack}',
+        '服装列表：{outfits}'].join('\n'),
+    inner: ['  中文名称：{nameCN}', '  英文名称：{nameEN}', '  上半身（正面）：{upperBody}', '  上半身（背面）：{upperBodyBack}',
+        '  下半身（正面）：{lowerBody}', '  下半身（背面）：{lowerBodyBack}'].join('\n'),
+    common: '{nameCN} {nameEN}',
+    outfit: ['中文名称：{nameCN}', '英文名称：{nameEN}', '上半身（正面）：{upperBody}', '上半身（背面）：{upperBodyBack}',
+        '下半身（正面）：{lowerBody}', '下半身（背面）：{lowerBodyBack}'].join('\n'),
+};
+
+/** 一行裡的 {欄位} 都是空的就整行不要；全部都空就整段不要。 */
+function applyTpl(tpl, data) {
+    const lines = [];
+    let withVars = 0;
+    let kept = 0;
+    for (const line of String(tpl || '').split(/\r?\n/)) {
+        const keys = [...line.matchAll(/\{([a-zA-Z0-9_]+)\}/g)].map(m => m[1]);
+        if (!keys.length) { lines.push(line); continue; }
+        withVars++;
+        if (!keys.some(k => String(data[k] ?? '').trim())) continue;
+        lines.push(line.replace(/\{([a-zA-Z0-9_]+)\}/g, (m, k) => String(data[k] ?? '')));
+        kept++;
+    }
+    return withVars && !kept ? '' : lines.join('\n');
+}
+
+function c8Templates() {
+    const c = chatu8();
+    const it = c?.injectionTemplates;
+    const p = it?.presets?.[it?.currentPresetId || '默认方案'] || {};
+    const pick = (k, d) => (typeof p[k] === 'string' ? p[k] : d);
+    return {
+        char: pick('characterListTemplate', C8_TPL.char), inner: pick('innerOutfitTemplate', C8_TPL.inner),
+        common: pick('commonCharacterListTemplate', C8_TPL.common), outfit: pick('enableOutfitListTemplate', C8_TPL.outfit),
+    };
+}
+
+const firstName = (s) => String(s || '').split('|')[0].trim();
+
+function c8OutfitData(o) {
+    return { nameCN: o.nameCN || '', nameEN: firstName(o.nameEN), upperBody: o.upperBody || '', upperBodyBack: o.upperBodyBack || '',
+        fullBody: o.fullBody || '', fullBodyBack: o.fullBodyBack || '', lowerBody: o.fullBody || '', lowerBodyBack: o.fullBodyBack || '' };
+}
+
+function c8CharData(p, outfits = '') {
+    return { nameCN: p.nameCN || '', nameEN: firstName(p.nameEN), traits: p.characterTraits || '',
+        facial: p.facialFeatures || '', facialBack: p.facialFeaturesBack || '',
+        upperSFW: p.upperBodySFW || '', upperSFWBack: p.upperBodySFWBack || '',
+        fullSFW: p.fullBodySFW || '', fullSFWBack: p.fullBodySFWBack || '', lowerSFW: p.fullBodySFW || '', lowerSFWBack: p.fullBodySFWBack || '',
+        upperNSFW: p.upperBodyNSFW || '', upperNSFWBack: p.upperBodyNSFWBack || '',
+        fullNSFW: p.fullBodyNSFW || '', fullNSFWBack: p.fullBodyNSFWBack || '', lowerNSFW: p.fullBodyNSFW || '', lowerNSFWBack: p.fullBodyNSFWBack || '',
+        negative: p.negative || '', outfits };
+}
+
+const enableId = (x) => (typeof x === 'string' ? x : x?.characterPresetName || x?.name || x?.presetName || '');
+
+/** 角色的名字（中英文、| 分開的別名）有出現在這段文字裡。 */
+function c8Named(p, text) {
+    const low = normName(text);
+    return [...String(p.nameCN || '').split('|'), ...String(p.nameEN || '').split('|')].map(normName).some(n => n && low.includes(n));
+}
+
+/** {{角色启用列表}}：智繪姬啟用的角色裡，名字出現在正文（＋上下文、需求）的那幾位。 */
+export function c8CharList(trigger) {
+    const c = chatu8();
+    const list = c?.characterEnablePresets?.[c?.characterEnablePresetId]?.characters;
+    if (!Array.isArray(list) || !list.length) return '（暂无启用的角色）';
+    const tpl = c8Templates();
+    const out = [];
+    for (const x of list) {
+        const p = c.characterPresets?.[enableId(x)];
+        if (!p || !c8Named(p, trigger)) continue;
+        const outfits = (p.outfits || []).map(id => c.outfitPresets?.[id]).filter(Boolean)
+            .map(o => applyTpl(tpl.inner, c8OutfitData(o))).filter(s => s.trim());
+        const text = applyTpl(tpl.char, c8CharData(p, outfits.length ? '\n\n' + outfits.join('\n\n') : ''));
+        if (text.trim()) out.push(text);
+    }
+    return out.length ? out.join('\n\n') : '（暂无被触发的角色）';
+}
+
+/** {{通用角色启用列表}} */
+export function c8CommonList() {
+    const c = chatu8();
+    const list = c?.characterCommonPresets?.[c?.characterCommonPresetId]?.characters;
+    if (!Array.isArray(list) || !list.length) return '暂未配置通用角色';
+    const tpl = c8Templates();
+    return list.map(x => c.characterPresets?.[enableId(x)]).filter(Boolean)
+        .map(p => applyTpl(tpl.common, c8CharData(p)).trim()).filter(Boolean).join('\n');
+}
+
+/** {{通用服装启用列表}} */
+export function c8OutfitList() {
+    const c = chatu8();
+    const list = c?.outfitEnablePresets?.[c?.outfitEnablePresetId]?.outfits;
+    if (!Array.isArray(list) || !list.length) return '暂未配置通用服装';
+    const tpl = c8Templates();
+    return list.map(id => c.outfitPresets?.[id]).filter(Boolean)
+        .map(o => applyTpl(tpl.outfit, c8OutfitData(o))).filter(s => s.trim()).join('\n\n');
+}
 
 function fill(content, vars) {
     let out = String(content || '');
@@ -775,7 +1140,7 @@ function fill(content, vars) {
 }
 
 export function parsePics(text) {
-    const raw = String(text || '').replace(/<(think|thinking|reasoning)>[\s\S]*?<\/\1>/gi, '');
+    const raw = String(text || '').replace(THINK, '');
     const out = [];
     for (const m of raw.matchAll(/<pic>([\s\S]*?)(?:<\/pic>|(?=<pic>)|$)/gi)) {
         const tags = m[1].match(/<tags>([\s\S]*?)(?:<\/tags>|$)/i)?.[1];
@@ -787,6 +1152,15 @@ export function parsePics(text) {
             after: Number(m[1].match(/<after>\D*(\d+)/i)?.[1]) || 0 });
     }
     if (!out.length) {
+        // 智繪姬的：<image> regex:原文那一句 … image###tag### </image>（11/25 一帆的預設）；原文那句拿來找段落
+        for (const m of raw.matchAll(/<image>([\s\S]*?)(?:<\/image>|(?=<image>)|$)/gi)) {
+            const tags = m[1].match(/image###([\s\S]*?)###/)?.[1];
+            if (!tags?.trim()) continue;
+            const quote = (m[1].match(/^\s*regex\s*[:：]\s*(.+)$/im)?.[1] || '').trim();
+            out.push({ scene: '', tags: cleanTags(tags), nsfw: hasNsfw(tags), quote });
+        }
+    }
+    if (!out.length) {
         // 也認智繪姬／喵喵那種 image###tag### 的格式（匯入別人的提示詞時）
         for (const m of raw.matchAll(/image###([\s\S]*?)###/g)) {
             if (m[1].trim()) out.push({ scene: '', tags: cleanTags(m[1]), nsfw: hasNsfw(m[1]) });
@@ -796,7 +1170,20 @@ export function parsePics(text) {
 }
 
 function cleanTags(s) {
-    return String(s).replace(/\n+/g, ', ').replace(/，/g, ',').replace(/\s*,\s*(,\s*)*/g, ', ').replace(/^[\s,]+|[\s,]+$/g, '');
+    const line = (x) => String(x).replace(/，/g, ',').replace(/\s*,\s*(,\s*)*/g, ', ').replace(/^[\s,]+|[\s,]+$/g, '');
+    // 分角色的（Scene Composition／Character N Prompt）一段一行，比較好看好改
+    if (/Character\s+\d+\s+Prompt\s*:/i.test(s)) return String(s).split(/\n+/).map(line).filter(Boolean).join('\n');
+    return line(String(s).replace(/\n+/g, ', '));
+}
+
+/** 智繪姬的 regex:原文 → 第幾段（找不到是 0）。 */
+function paraOfQuote(paras, quote) {
+    const q = normText(String(quote || '').replace(/^\[\d+\]\s*/, ''));
+    if (!q) return 0;
+    const norm = paras.map(normText);
+    let i = norm.findIndex(p => p.includes(q));
+    if (i < 0 && q.length > 8) i = norm.findIndex(p => p.includes(q.slice(0, 8)) || p.includes(q.slice(-8)));
+    return i + 1;
 }
 
 /** 「2」或「1～3」 */
@@ -808,26 +1195,43 @@ export function countText() {
     return a === b ? String(a) : `${a}～${b}`;
 }
 
-/** 讀這則正文，請副 API 寫 tag。回 [{scene, tags}]。 */
-export async function writeTags(mesText) {
+/**
+ * 讀這則正文，請副 API 寫 tag。回 [{scene, tags}]。
+ * @param opt.mesId 這則是第幾樓（{{上下文}} 從它前面拿）
+ * @param opt.demand 她這次想畫什麼（{{用户需求}}）
+ */
+export async function writeTags(mesText, opt = {}) {
     const profile = tagApiProfile();
     if (!profile) throw new Error('還沒有寫 tag 的 API～到「設定 → ✨ 排版模型」加一組，再到「🎨 生圖」選它');
     const paras = paragraphs(mesText);
+    const prompt = currentPrompt();
     const vars = {
         正文: numbered(paras).slice(0, 9000),
         角色設定: characterText(),
         用戶人設: personaText(),
         固定外貌: looksText(),
         張數: countText(),
+        上下文: contextText(opt.mesId),
+        用戶需求: String(opt.demand || '').trim(),
     };
-    const msgs = currentPrompt().entries
-        .filter(e => e.enabled && String(e.content || '').trim())
-        .map(e => ({ role: ['system', 'user', 'assistant'].includes(e.role) ? e.role : 'system', content: fill(e.content, vars) }));
+    // 觸發詞、啟用的角色、世界書都看「正文＋上下文＋她的需求」
+    const trigger = [paras.join('\n'), vars.上下文, vars.用戶需求].filter(Boolean).join('\n');
+    const entries = prompt.entries.filter(e => e.enabled && String(e.content || '').trim() && entryOn(e, trigger));
+    const all = entries.map(e => e.content).join('\n');
+    if (usesVar(all, '世界書觸發')) vars.世界書觸發 = await worldText(trigger);
+    if (usesVar(all, '角色啟用列表')) vars.角色啟用列表 = c8CharList(trigger);
+    if (usesVar(all, '通用角色啟用列表')) vars.通用角色啟用列表 = c8CommonList();
+    if (usesVar(all, '通用服裝啟用列表')) vars.通用服裝啟用列表 = c8OutfitList();
+    const msgs = entries
+        .map(e => ({ role: ['system', 'user', 'assistant'].includes(e.role) ? e.role : 'system', content: fill(e.content, vars).trim() }))
+        .filter(m => m.content);
     if (!msgs.some(m => m.role === 'user')) msgs.push({ role: 'user', content: vars.正文 });
-    const reply = await callModel(profile, msgs, { maxTokens: 2000, temperature: 0.8 });
+    // 包子預設的回得短；匯入的（像一帆那份）每張圖前面還有一大段思考，給多一點
+    const reply = await callModel(profile, msgs, { maxTokens: prompt.id === 'builtin' ? 2000 : 8192, temperature: 0.8 });
     const pics = parsePics(reply);
     if (!pics.length) throw new Error('模型沒照格式回 tag：' + reply.slice(0, 80));
     for (const pic of pics) {
+        if (!pic.after && pic.quote) pic.after = paraOfQuote(paras, pic.quote);
         if (pic.after >= 1 && pic.after <= paras.length) pic.anchor = anchorOf(paras[pic.after - 1]);
     }
     return pics;
@@ -912,6 +1316,7 @@ function saveChat() {
 }
 
 const busy = new Map();     // 訊息 id → 寫 tag 中
+const asking = new Map();   // 訊息 id → 「想畫什麼」框裡打的字（提示詞有 {{用户需求}} 時先問）
 const status = new Map();   // 項目 id → 狀態字
 
 function isHusbandMes(mes) {
@@ -966,16 +1371,25 @@ function itemHtml(it, i) {
     return `<div class="bzp-row">${head}${tagBtn}</div>${st.startsWith('❌') ? statusHtml(st) : ''}${body}${tags}`;
 }
 
+function askHtml(mesId) {
+    if (!asking.has(mesId)) return '';
+    return `<div class="bzp-ask">
+        <textarea class="bzp-ask-text" rows="2" placeholder="這次想畫什麼？（可以不填，例如「多畫他的表情」）">${esc(asking.get(mesId))}</textarea>
+        <div class="bzp-actions"><button data-p="askgo" class="bzp-main">✍️ 寫 tag</button><button data-p="askno">取消</button></div>
+    </div>`;
+}
+
 function zoneHtml(mesId, mes, isLast, loose) {
     const items = itemsOf(mes);
     const writing = busy.get(mesId);
     if (!items.length && !writing) {
+        if (asking.has(mesId)) return askHtml(mesId);
         return isLast && prefs().lastChip ? `<button class="bzp-chip" data-p="tags">🎨 生圖</button>` : '';
     }
     const head = `<div class="bzp-using" data-p="artist" title="點一下換畫師串">🖌️ 這次用：<span data-raw>${esc(usingLine())}</span> <span class="bzp-caret">▾</span></div>`;
     const rest = loose.map(({ it, i }) => `<div class="bzp-inline" data-item="${esc(it.id)}">${itemHtml(it, i)}</div>`).join('');
     return `${head}${rest}
-        ${writing ? statusHtml(writing) : ''}
+        ${writing ? statusHtml(writing) : askHtml(mesId)}
         <div class="bzp-actions bzp-foot">
             <button data-p="tags">✍️ 重寫 tag</button>
             ${items.some(it => !it.img) ? '<button data-p="drawall">🎨 全部畫</button>' : ''}
@@ -1083,15 +1497,24 @@ function setStatus(mesId, itemId, text) {
     renderMes(mesId);
 }
 
+/** 按了「🎨 生圖」：提示詞要問她想畫什麼的話先跳出小框，不然直接寫。 */
+export function askTags(mesId) {
+    if (!wantsDemand()) { makeTags(mesId); return; }
+    if (!asking.has(mesId)) asking.set(mesId, '');
+    renderMes(mesId);
+    document.querySelector(`#chat .mes[mesid="${mesId}"] .bzp-ask-text`)?.focus();
+}
+
 /** 寫 tag（取代這則現在的小卡）。 */
-export async function makeTags(mesId, { thenDraw = false } = {}) {
+export async function makeTags(mesId, { thenDraw = false, demand = '' } = {}) {
     const ctx = stx();
     const mes = ctx?.chat?.[mesId];
     if (!isHusbandMes(mes) || busy.has(mesId)) return;
+    asking.delete(mesId);
     busy.set(mesId, '副 API 在讀正文寫 tag…');
     renderMes(mesId);
     try {
-        const pics = await writeTags(mes.mes);
+        const pics = await writeTags(mes.mes, { mesId, demand });
         const items = pics.map(p => ({ id: Math.random().toString(36).slice(2, 10), scene: p.scene, tags: p.tags, nsfw: !!p.nsfw,
             after: p.after || 0, anchor: p.anchor || '' }));
         // 已經畫好的圖保留（重寫 tag 不會把圖丟掉）
@@ -1123,9 +1546,10 @@ export async function drawItem(mesId, itemId, opt = {}) {
     if (!item || (status.has(itemId) && !status.get(itemId).startsWith('❌'))) return;
     const ctx = stx();
     const nsfw = !!item.nsfw;
-    const tags = expandLooks(item.tags, cardKey(), nsfw);
+    const prep = prepTags(item.tags, cardKey(), nsfw);
     const from = opt.seedFrom;
-    const { body, meta } = buildRequest(tags, from ? { params: from.params, artist: from.artist, seed: from.seed, nsfw } : { nsfw });
+    const extra = { nsfw, chars: prep.chars, extraUC: prep.uc };
+    const { body, meta } = buildRequest(prep.base, from ? { params: from.params, artist: from.artist, seed: from.seed, ...extra } : extra);
     meta.rawTags = item.tags;
     try {
         const png = await draw(body, (s) => setStatus(mesId, itemId, s));
@@ -1337,7 +1761,9 @@ function onZoneClick(ev) {
     const mesId = Number(zone.closest('.mes')?.getAttribute('mesid'));
     const itemId = btn.closest('[data-item]')?.dataset.item;
     const a = btn.dataset.p;
-    if (a === 'tags') { makeTags(mesId); return; }
+    if (a === 'tags') { askTags(mesId); return; }
+    if (a === 'askgo') { makeTags(mesId, { demand: asking.get(mesId) || '' }); return; }
+    if (a === 'askno') { asking.delete(mesId); renderMes(mesId); return; }
     if (a === 'artist') { openArtistPicker(() => renderAll()); return; }
     if (a === 'drawall') { itemsOf(stx().chat[mesId]).filter(it => !it.img).forEach(it => drawItem(mesId, it.id)); return; }
     if (!itemId) return;
@@ -1364,6 +1790,13 @@ function onZoneClick(ev) {
         saveChat();
         renderMes(mesId);
     }
+}
+
+/** 「想畫什麼」框打的字先記著（畫面重畫時不會不見）。 */
+function onAskInput(ev) {
+    const ta = ev.target.closest('.bzp-ask-text');
+    if (!ta) return;
+    asking.set(Number(ta.closest('.mes')?.getAttribute('mesid')), ta.value);
 }
 
 function onTagEdit(ev) {
@@ -1393,7 +1826,7 @@ function onMenuClick(ev) {
     const b = ev.target.closest('.bzp-menu-btn');
     if (!b) return;
     const id = Number(b.closest('.mes')?.getAttribute('mesid'));
-    if (Number.isFinite(id)) makeTags(id);
+    if (Number.isFinite(id)) askTags(id);
 }
 
 let started = false;
@@ -1425,6 +1858,7 @@ export function startPics() {
     chatEl?.addEventListener('click', onZoneClick, true);
     chatEl?.addEventListener('click', onMenuClick);
     chatEl?.addEventListener('change', onTagEdit);
+    chatEl?.addEventListener('input', onAskInput);
     chatEl?.addEventListener('focusout', onTagEdit);
     all();
 }

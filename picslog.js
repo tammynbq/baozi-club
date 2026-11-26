@@ -90,17 +90,20 @@ export function openLog(l) {
             <summary><b>${i + 1}.</b> <span class="bzp-log-role">${esc(x.role)}</span> <span data-raw>${esc(x.name || '')}</span> <span class="bzp-hint">${len(x.content)} 字</span></summary>
             <pre class="bzp-log-pre" data-raw>${esc(x.content)}</pre>
         </details>`).join('');
-    m.innerHTML = `<div class="bzp-modal-card bzp-wide">
+    // 模型回的放最上面、送出去的摺起來（一帆 #162：68 段排在前面，回覆的框被擠成一條縫）
+    m.innerHTML = `<div class="bzp-modal-card bzp-wide bzp-log-card">
         <div class="bzp-modal-title">📜 這次寫 tag 送了什麼</div>
         <div class="bzp-hint" data-raw>${esc(logLine(l))}</div>
         <div class="bzp-meta-row"><span>API</span><b data-raw>${esc(l.api || '')}</b></div>
         ${l.demand ? `<div class="bzp-meta-row"><span>這次的需求</span><b data-raw>${esc(l.demand)}</b></div>` : ''}
-        <div class="bzp-label">送給模型的（${(l.sent || []).length} 段，共 ${total.toLocaleString()} 字）</div>
-        <div class="bzp-log-parts">${parts || '<div class="bzp-hint">（沒有）</div>'}</div>
-        ${l.skipped?.length ? `<div class="bzp-label">觸發詞沒對上、這次沒送的條目（${l.skipped.length}）</div><div class="bzp-hint" data-raw>${esc(l.skipped.join('、'))}</div>` : ''}
         <div class="bzp-label">模型回的（${len(l.reply)} 字）</div>
         ${l.error ? `<div class="baozi-error" data-raw>${esc(l.error)}</div>` : ''}
         <pre class="bzp-log-pre bzp-log-reply" data-raw>${esc(l.reply || '（沒有回覆）')}</pre>
+        <details class="bzp-log-sent">
+            <summary class="bzp-label">送給模型的（${(l.sent || []).length} 段，共 ${total.toLocaleString()} 字）▸ 點開看</summary>
+            <div class="bzp-log-parts">${parts || '<div class="bzp-hint">（沒有）</div>'}</div>
+        </details>
+        ${l.skipped?.length ? `<div class="bzp-label">觸發詞沒對上、這次沒送的條目（${l.skipped.length}）</div><div class="bzp-hint" data-raw>${esc(l.skipped.join('、'))}</div>` : ''}
         <div class="bzp-actions"><button data-a="copy">📋 全部複製</button><button data-close>✕</button></div>
     </div>`;
     document.body.appendChild(m);

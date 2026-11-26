@@ -69,6 +69,11 @@ function face(g, kind, dy = 0) {
         rect(g, 10, y, 2, 2, 'e'); rect(g, 20, y, 2, 2, 'e'); put(g, 10, y, 'w'); put(g, 20, y, 'w');
         blush(); put(g, 15, y + 2, 'n'); put(g, 16, y + 2, 'n');
     }
+    if (kind === 'look') {
+        // 專心看畫板（眼睛往左下）
+        rect(g, 9, y + 1, 2, 2, 'e'); rect(g, 19, y + 1, 2, 2, 'e'); put(g, 9, y + 1, 'w'); put(g, 19, y + 1, 'w');
+        blush(); put(g, 15, y + 3, 'n');
+    }
     if (kind === 'smile') {
         for (const x of [9, 19]) { put(g, x, y + 1, 'e'); put(g, x + 1, y, 'e'); put(g, x + 2, y, 'e'); put(g, x + 3, y + 1, 'e'); }
         blush(); put(g, 15, y + 2, 'n'); put(g, 16, y + 2, 'n'); put(g, 14, y + 1, 'n'); put(g, 17, y + 1, 'n');
@@ -107,33 +112,133 @@ const POSES = {
 export function drawPose(name, scale = 2, shadow = false) {
     const g = grid();
     POSES[name](g);
-    const c = document.createElement('canvas');
-    c.width = 34 * scale;
-    c.height = 34 * scale;
-    c.className = 'xbz-canvas';
+    return paintGrid(g, 32, scale, shadow);
+}
+
+/** 格子 → canvas（cols 格寬、32 格高，外面一圈暖棕色的框）。 */
+function paintGrid(g, cols, scale, shadow = false, c = null, ox = 0) {
+    if (!c) {
+        c = document.createElement('canvas');
+        c.width = (cols + 2) * scale;
+        c.height = 34 * scale;
+        c.className = 'xbz-canvas';
+    }
     const x = c.getContext('2d');
+    const at0 = ox * scale;
     if (shadow) {
         // 影子直接畫進圖裡（以前用 CSS 的 drop-shadow 濾鏡：iPhone 每動一下就整層重算，手機會燙）
         x.fillStyle = 'rgba(139, 90, 60, 0.28)';
         x.beginPath();
-        x.ellipse(17 * scale, 32.6 * scale, 10 * scale, 1.4 * scale, 0, 0, Math.PI * 2);
+        x.ellipse(at0 + (cols / 2 + 1) * scale, 32.6 * scale, 10 * scale, 1.4 * scale, 0, 0, Math.PI * 2);
         x.fill();
     }
-    const at = (r, q) => (r >= 0 && r < 32 && q >= 0 && q < 32 ? g[r][q] : null);
+    const at = (r, q) => (r >= 0 && r < 32 && q >= 0 && q < cols ? g[r][q] : null);
     const skip = v => v === 'z' || v === 'd' || v === 't';
-    for (let r = -1; r <= 32; r++) for (let q = -1; q <= 32; q++) {
+    for (let r = -1; r <= 32; r++) for (let q = -1; q <= cols; q++) {
         if (at(r, q)) continue;
         if ([[0, 1], [0, -1], [1, 0], [-1, 0]].some(([a, b]) => { const v = at(r + a, q + b); return v && !skip(v); })) {
             x.fillStyle = PAL.o;
-            x.fillRect((q + 1) * scale, (r + 1) * scale, scale, scale);
+            x.fillRect(at0 + (q + 1) * scale, (r + 1) * scale, scale, scale);
         }
     }
     g.forEach((row, r) => row.forEach((v, q) => {
         if (!v) return;
         x.fillStyle = PAL[v];
-        x.fillRect((q + 1) * scale, (r + 1) * scale, scale, scale);
+        x.fillRect(at0 + (q + 1) * scale, (r + 1) * scale, scale, scale);
     }));
     return c;
+}
+
+
+// ============================================================
+// 🎨 拿畫板的小包子（2.25.0，一帆 #162 選的第二版）
+// ============================================================
+// 生圖時畫畫（四格循環：天空 → 太陽和雲 → 草地 → 粉色小包子和小花），畫好了把畫舉起來。
+// 左右放寬到 44 格（左邊 6 格給畫板），本體照上面那隻畫。
+
+Object.assign(PAL, { W: '#a8743f', V: '#7a5230', C: '#fffdf6', y: '#ffd54a', g: '#8cc56a', u: '#7ab8e8', P: '#e98aa0', L: '#6b4a2e', G: '#5f9e4a' });
+const WIDE = 44;
+const OX = 6;
+const PIC = [
+    'uuuuuuuuu',
+    'uyyuuwwwu',
+    'uyyuuuwuu',
+    'uuuuuuuuu',
+    'GGuuppuuG',
+    'gGGpPPpGg',
+    'ggpPPPPpg',
+    'gRggggyRg',
+    'ggggRgggg',
+];
+const LAYERS = ['u', 'yw', 'gG', 'pPRy'];
+const PEN = ['u', 'y', 'g', 'P'];
+
+function widen(g32) {
+    const w = Array.from({ length: 32 }, () => Array(WIDE).fill(null));
+    g32.forEach((row, r) => row.forEach((v, q) => { if (v) w[r][q + OX] = v; }));
+    return w;
+}
+const wput = (w, x, y, c) => { x += OX; if (y >= 0 && y < 32 && x >= 0 && x < WIDE) w[y][x] = c; };
+const wrect = (w, x0, y0, ww, hh, c) => { for (let y = y0; y < y0 + hh; y++) for (let x = x0; x < x0 + ww; x++) wput(w, x, y, c); };
+function wline(w, x0, y0, x1, y1, c) {
+    const n = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0)) || 1;
+    for (let i = 0; i <= n; i++) wput(w, Math.round(x0 + (x1 - x0) * i / n), Math.round(y0 + (y1 - y0) * i / n), c);
+}
+function easelBoard(w, x0, y0, upto) {
+    wrect(w, x0, y0, 11, 11, 'W'); wrect(w, x0 + 1, y0 + 1, 9, 9, 'C'); wrect(w, x0, y0 + 10, 11, 1, 'V');
+    PIC.forEach((row, y) => [...row].forEach((c, x) => {
+        if (LAYERS.slice(0, upto + 1).some(l => l.includes(c))) wput(w, x0 + 1 + x, y0 + 1 + y, c);
+    }));
+}
+
+/** 一格：frame 0～3 是畫畫中，'done' 是畫好了舉起來。 */
+function painterGrid(frame) {
+    const g = grid();
+    body(g, 'free'); bun(g, -4); face(g, frame === 'done' ? 'smile' : 'look', -4);
+    const w = widen(g);
+    if (frame === 'done') {
+        easelBoard(w, 20, 17, 3);
+        wrect(w, 19, 22, 2, 2, 'b'); wrect(w, 30, 22, 2, 2, 'b');
+        for (const [x, y] of [[33, 12], [34, 11], [35, 12], [34, 13], [19, 13], [18, 14]]) wput(w, x, y, 'y');
+        return w;
+    }
+    wline(w, -4, 31, -1, 21, 'L'); wline(w, 4, 31, 1, 21, 'L');
+    easelBoard(w, -5, 15, frame);
+    wrect(w, 5, 24, 2, 2, 'b');
+    const [tx, ty] = [[3, 22], [2, 23], [3, 24], [2, 21]][frame];
+    wrect(w, 8, 25, 2, 2, 'b');
+    wline(w, 8, 25, tx + 1, ty + 1, 'L');
+    wput(w, tx, ty, PEN[frame]);
+    return w;
+}
+
+/** 拿畫板的小包子（一張 canvas）。 */
+export function drawPainter(frame = 'done', scale = 1) {
+    return paintGrid(painterGrid(frame), WIDE, scale);
+}
+
+const strips = new Map();
+/** 畫畫中的四格排成一條（給 CSS 一格一格換）：{url, w, h}。 */
+export function painterStrip(scale = 1) {
+    if (!strips.has(scale)) {
+        const fw = (WIDE + 2) * scale;
+        const c = document.createElement('canvas');
+        c.width = fw * 4;
+        c.height = 34 * scale;
+        for (let f = 0; f < 4; f++) paintGrid(painterGrid(f), WIDE, scale, false, c, f * (WIDE + 2));
+        strips.set(scale, { url: c.toDataURL('image/png'), w: fw, h: 34 * scale });
+    }
+    return strips.get(scale);
+}
+
+/** 會動的那隻（HTML 字串，畫面重畫也不會斷）。 */
+export function painterHtml(scale = 1) {
+    try {
+        const s = painterStrip(scale);
+        return `<span class="bzp-painter" aria-hidden="true" style="width:${s.w}px;height:${s.h}px;background-image:url(${s.url})"></span>`;
+    } catch {
+        return '<span class="baozi-chat-spin"></span>';
+    }
 }
 
 
@@ -241,12 +346,14 @@ export function closeBubble() {
     }
 }
 
-export function showBubble(html) {
+export function showBubble(html, { pose = null } = {}) {
     closeBubble();
     const pop = document.createElement('div');
     pop.id = 'xbz-pop';
     pop.className = 'xbz-pop';
-    pop.appendChild(drawPose('steamer', 3));
+    pop.appendChild(pose || drawPose('steamer', 3));
+    // 寬一點的造型（拿畫板的）：照它的大小，不要被擠成正方形
+    if (pose) { pop.style.width = pose.width + 'px'; pop.style.height = pose.height + 'px'; }
     const bubble = document.createElement('div');
     bubble.id = 'xbz-bubble';
     bubble.className = 'xbz-bubble';

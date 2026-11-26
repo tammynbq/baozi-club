@@ -4,6 +4,7 @@
 
 import { loadProfiles, renderAiSettings } from './aidesign.js';
 import { localizeLive, t } from './i18n.js';
+import { drawPainter } from './xiaobaozi.js';
 import {
     esc, stx, store, saveStore, prefs, loadConns, saveConns, activeConn, setActiveConn, testConn,
     currentParams, usingLine, openArtistPicker, allPrompts, currentPrompt, BUILTIN_PROMPT,
@@ -20,6 +21,7 @@ export function renderPicsScreen(container, ui) {
             <div class="baozi-screen-header">
                 <button class="baozi-back" id="baozi-back">← 回首頁</button>
                 <h3>🎨 生圖</h3>
+                <span class="bzp-head-painter"></span>
             </div>
             <div class="baozi-setup-hint">老公回完，在他那則底下按「🎨 生圖」（或訊息「…」選單裡的 🎨）：副 API 讀正文寫 tag → 每張一張小卡 → 按「🎨 畫」送 NovelAI。</div>
             <div class="baozi-form">
@@ -43,6 +45,12 @@ export function renderPicsScreen(container, ui) {
             </div>
         </div>`;
     container.querySelector('#baozi-back').addEventListener('click', ui.back);
+    // 標題旁邊那隻拿畫板的小包子（舉著畫好的畫）
+    try {
+        const c = drawPainter('done', 1);
+        c.className = '';      // 照原本大小，不要撐滿
+        container.querySelector('.bzp-head-painter')?.appendChild(c);
+    } catch { /* 畫不出來就算了 */ }
     const artistBox = container.querySelector('#bzp-set-artist');
     const paramsBox = container.querySelector('#bzp-set-params');
     renderArtist(artistBox, () => renderParams(paramsBox, () => renderArtist(artistBox)));

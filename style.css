@@ -2483,6 +2483,16 @@ select.baozi-used-pick { width: auto; max-width: 9em; padding-right: 4px; }
 .bzp-pill:hover { opacity: 1; }
 .bzp-pill.bzp-todo { border-style: solid; border-color: var(--SmartThemeQuoteColor, #FFB5A7); }
 .bzp-pill.bzp-busy { cursor: default; border-style: solid; }
+/* 🎨 拿畫板的小包子（生圖時一格一格畫，2.25.0） */
+.bzp-painter {
+    display: inline-block; vertical-align: middle; flex: none; image-rendering: pixelated;
+    background-repeat: no-repeat; background-size: 400% 100%; background-position: 0 0;
+    animation: bzp-paint 1.8s steps(4, jump-none) infinite;
+}
+@keyframes bzp-paint { from { background-position: 0 0; } to { background-position: 100% 0; } }
+body.baozi-powersave .bzp-painter { animation: none; background-position: 100% 0; }
+.bzp-head-painter { display: inline-flex; align-items: center; margin-left: 6px; }
+.bzp-head-painter canvas { image-rendering: pixelated; }
 .bzp-pill-st { opacity: .7; }
 .bzp-pill-mini {
     flex: none; cursor: pointer; font-size: 0.95em; padding: 5px 9px; border-radius: 10px; opacity: .8;

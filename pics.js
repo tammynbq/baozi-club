@@ -16,6 +16,7 @@ import { bot } from './bot.js';
 import { loadProfiles, activeProfile, callModel } from './aidesign.js';
 import { localizeLive, t } from './i18n.js';
 import { openViewer, saveAndTell } from './savefile.js';
+import { drawPainter, painterHtml, showBubble, closeBubble } from './xiaobaozi.js';
 
 const EXT = 'baozi-club';
 const KEY_CONNS = 'baozi_nai_conns';
@@ -1386,7 +1387,7 @@ const openTag = new Set();
 const seedMode = new Set();
 
 function statusHtml(st) {
-    return `<div class="bzp-status">${st.startsWith('❌') ? '' : '<span class="baozi-chat-spin"></span> '}${esc(st)}</div>`;
+    return `<div class="bzp-status">${st.startsWith('❌') ? '' : painterHtml(1) + ' '}${esc(st)}</div>`;
 }
 
 /** 一張圖：摺起來的一條；打開才看到圖和按鈕。 */
@@ -1395,7 +1396,7 @@ function itemHtml(it, i) {
     const label = `第 ${i + 1} 張`;
     const working = st && !st.startsWith('❌');
     let head;
-    if (working) head = `<div class="bzp-pill bzp-busy"><span class="baozi-chat-spin"></span> ${label}<span class="bzp-pill-st">・${esc(st)}</span></div>`;
+    if (working) head = `<div class="bzp-pill bzp-busy">${painterHtml(1)} ${label}<span class="bzp-pill-st">・${esc(st)}</span></div>`;
     else if (!it.img) head = `<button class="bzp-pill bzp-todo" data-p="draw">🎨 ${label}</button>`;
     else head = `<button class="bzp-pill" data-p="fold">🖼️ ${label} <span class="bzp-caret">${openImg.has(it.id) ? '▾' : '▸'}</span></button>`;
     // 畫好的圖摺起來時 tag 也藏起來（tag 裡可能有 🔞 的字）
@@ -1604,9 +1605,13 @@ export async function drawItem(mesId, itemId, opt = {}) {
     const extra = { nsfw, chars: prep.chars, extraUC: prep.uc };
     const { body, meta } = buildRequest(prep.base, from ? { params: from.params, artist: from.artist, seed: from.seed, ...extra } : extra);
     meta.rawTags = item.tags;
+    // 重畫（一帆 #162 選 B）：不用確認，直接顯示「重畫中」；畫好了小包子冒泡說一聲
+    const redo = !!item.img;
+    const say = (s) => setStatus(mesId, itemId, !redo ? s : s === '畫圖中…' ? '重畫中…' : `重畫・${s}`);
     try {
-        const png = await draw(body, (s) => setStatus(mesId, itemId, s));
-        setStatus(mesId, itemId, '存圖中…');
+        say('畫圖中…');
+        const png = await draw(body, say);
+        say('存圖中…');
         const local = await saveLocal(png, ctx?.name2);
         ({ mes, item } = findItem(mesId, itemId));     // 畫的時候她可能換了 swipe、刪了卡
         if (item) {
@@ -1618,9 +1623,29 @@ export async function drawItem(mesId, itemId, opt = {}) {
             saveChat();
         }
         setStatus(mesId, itemId, '');
+        if (redo && item) tellRedrawn(mesId, itemId);
     } catch (e) {
         setStatus(mesId, itemId, '❌ ' + e.message);
         setTimeout(() => { if (status.get(itemId)?.startsWith('❌')) setStatus(mesId, itemId, ''); }, 15_000);
+    }
+}
+
+/** 重畫好了：小包子舉著畫冒泡，按「👀 看看」打開那張。 */
+function tellRedrawn(mesId, itemId) {
+    const n = itemsOf(stx()?.chat?.[mesId]).findIndex(it => it.id === itemId) + 1;
+    let pose = null;
+    try { pose = drawPainter('done', 3); } catch { /* 畫不出來就用平常那隻 */ }
+    try {
+        const bubble = showBubble(`<div class="xbz-say">🎨 第 ${n} 張重畫好了～</div><div class="baozi-toast-row"><button class="baozi-btn-small baozi-on" data-a="see">👀 看看</button><button class="baozi-btn-small" data-a="bye">好～</button></div>`, { pose });
+        bubble.querySelector('[data-a="bye"]')?.addEventListener('click', closeBubble);
+        bubble.querySelector('[data-a="see"]')?.addEventListener('click', () => {
+            closeBubble();
+            openImg.add(itemId);
+            renderMes(mesId);
+            document.querySelector(`#chat .mes[mesid="${mesId}"] .bzp-inline[data-item="${CSS.escape(itemId)}"], #chat .mes[mesid="${mesId}"] .bzp-zone`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        });
+    } catch {
+        toast(`🎨 第 ${n} 張重畫好了`, 'success');
     }
 }
 

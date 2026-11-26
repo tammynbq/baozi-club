@@ -8,8 +8,9 @@ import { drawPainter } from './xiaobaozi.js';
 import {
     esc, stx, store, saveStore, prefs, loadConns, saveConns, activeConn, setActiveConn, testConn,
     currentParams, usingLine, openArtistPicker, allPrompts, currentPrompt, BUILTIN_PROMPT,
-    cardKey, seedLooks, renderAll, writeParams, paramGroups, chatu8Characters, linkedLooks, countText,
+    cardKey, seedLooks, renderAll, writeParams, paramGroups, chatu8Characters, linkedLooks, countText, cleanOldImages,
 } from './pics.js';
+import { listLogs, logLine, openLog } from './picslog.js';
 
 const maskKey = (k) => (k ? '••••' + String(k).slice(-4) : '（沒填）');
 const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
@@ -42,6 +43,12 @@ export function renderPicsScreen(container, ui) {
                 <hr class="bzp-hr">
                 <div class="baozi-setup-section-title">🧍 固定外貌</div>
                 <div id="bzp-set-looks"></div>
+                <hr class="bzp-hr">
+                <div class="baozi-setup-section-title">📜 寫 tag 的紀錄</div>
+                <div id="bzp-set-logs"></div>
+                <hr class="bzp-hr">
+                <div class="baozi-setup-section-title">🧹 清掉舊的生圖</div>
+                <div id="bzp-set-clean"></div>
             </div>
         </div>`;
     container.querySelector('#baozi-back').addEventListener('click', ui.back);
@@ -59,7 +66,63 @@ export function renderPicsScreen(container, ui) {
     renderTagPrefs(container.querySelector('#bzp-set-tag'));
     renderPrompts(container.querySelector('#bzp-set-prompt'));
     renderLooks(container.querySelector('#bzp-set-looks'));
+    renderLogs(container.querySelector('#bzp-set-logs'));
+    renderClean(container.querySelector('#bzp-set-clean'));
     localizeLive(container);
+}
+
+
+// ---------- 📜 寫 tag 的紀錄（2.26.0） ----------
+
+async function renderLogs(box) {
+    box.innerHTML = '<div class="bzp-hint">載入中…</div>';
+    const list = await listLogs().catch(() => []);
+    box.innerHTML = `
+        <div class="baozi-setup-hint">最近 10 次寫 tag 送給模型的每一段、模型回的原文，都記在這支手機。生圖區塊底下的 📜 是那一則的。</div>
+        ${list.length ? `<div class="bzp-log-list">${list.map((l, i) => `<button class="baozi-tag-chip bzp-log-item" data-i="${i}">${l.error ? '❌' : '📜'} <span data-raw>${esc(logLine(l))}</span></button>`).join('')}</div>`
+            : '<div class="bzp-hint">還沒有紀錄（從 2.26.0 開始記）</div>'}`;
+    box.onclick = (ev) => {
+        const b = ev.target.closest('[data-i]');
+        if (b) openLog(list[Number(b.dataset.i)]);
+    };
+    localizeLive(box);
+}
+
+
+// ---------- 🧹 清掉舊的生圖（2.26.0） ----------
+
+function renderClean(box) {
+    const pr = prefs();
+    const days = Number(pr.cleanDays) || 0;
+    const opts = [[0, '不自動清'], [3, '3 天'], [7, '7 天'], [14, '14 天'], [30, '30 天']];
+    box.innerHTML = `
+        <div class="baozi-setup-hint">畫好的圖存在酒館的圖片資料夾（佔手機空間）。選幾天，就每天自動刪掉那麼多天以前畫的（存進包子相簿的不刪）；刪掉的那張在聊天裡變回「🎨 畫」，tag 還在，想要可以重畫。</div>
+        <div class="bzp-cats">${opts.map(([d, label]) => `<button class="baozi-tag-chip ${d === days ? 'active' : ''}" data-days="${d}">${label}</button>`).join('')}</div>
+        <button class="baozi-btn-small" data-a="now" ${days ? '' : 'disabled'}>🧹 現在清（${days ? days + ' 天前的' : '先選幾天'}）</button>
+        <div class="bzp-hint" data-k="msg"></div>`;
+    box.onclick = async (ev) => {
+        const d = ev.target.closest('[data-days]');
+        if (d) {
+            pr.cleanDays = Number(d.dataset.days);
+            saveStore();
+            renderClean(box);
+            return;
+        }
+        const now = ev.target.closest('[data-a="now"]');
+        if (!now || now.disabled) return;
+        if (!confirm(t(`刪掉 ${days} 天前畫的圖？（存進相簿的不刪，刪了的可以用 tag 重畫）`))) return;
+        now.disabled = true;
+        const msg = box.querySelector('[data-k="msg"]');
+        msg.textContent = t('清理中…');
+        try {
+            const r = await cleanOldImages(days);
+            msg.textContent = t(`🧹 清掉了 ${r.removed} 張${r.kept ? `，${r.kept} 張存過相簿所以留著` : ''}${r.failed ? `，${r.failed} 張刪不了` : ''}`);
+        } catch (e) {
+            msg.textContent = t('❌ 清不了：' + e.message);
+        }
+        now.disabled = false;
+    };
+    localizeLive(box);
 }
 
 

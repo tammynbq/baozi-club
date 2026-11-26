@@ -16,6 +16,7 @@ import { bot } from './bot.js';
 import { loadProfiles, activeProfile, callModel } from './aidesign.js';
 import { localizeLive, t } from './i18n.js';
 import { openViewer, saveAndTell } from './savefile.js';
+import { addLog, listLogs, logFor, openLog } from './picslog.js';
 import { drawPainter, painterHtml, showBubble, closeBubble } from './xiaobaozi.js';
 
 const EXT = 'baozi-club';
@@ -60,6 +61,7 @@ const DEFAULT_PREFS = {
     promptId: 'builtin',  // 寫 tag 的提示詞
     lastChip: true,       // 最後一則老公的回覆底下顯示「🎨 生圖」
     blockTags: '',        // 永遠不要出現的 tag（逗號或換行分開），畫之前拿掉
+    cleanDays: 0,         // 🧹 幾天前的生圖自動刪掉（0＝不刪）
     ctxCount: 1,          // {{上下文}} 帶前面幾則 AI 訊息（一帆 11/25：智繪姬裡她設的是 1）
 };
 
@@ -740,6 +742,12 @@ function tagApiProfile() {
     return loadProfiles().find(p => p.id === id) || activeProfile();
 }
 
+/** 現在這個聊天（記寫 tag 的紀錄用）。 */
+export function chatKey() {
+    const c = stx();
+    try { return String(c?.getCurrentChatId?.() ?? c?.chatId ?? ''); } catch { return ''; }
+}
+
 export function cardKey() {
     const ctx = stx();
     const ch = ctx?.characters?.[ctx?.characterId];
@@ -1269,19 +1277,32 @@ export async function writeTags(mesText, opt = {}) {
     };
     // 觸發詞、啟用的角色、世界書都看「正文＋上下文＋她的需求」
     const trigger = [paras.join('\n'), vars.上下文, vars.用戶需求].filter(Boolean).join('\n');
-    const entries = prompt.entries.filter(e => e.enabled && String(e.content || '').trim() && entryOn(e, trigger));
+    const live = prompt.entries.filter(e => e.enabled && String(e.content || '').trim());
+    const entries = live.filter(e => entryOn(e, trigger));
+    const skipped = live.filter(e => !entries.includes(e)).map(e => e.name || '（沒名字）');
     const all = entries.map(e => e.content).join('\n');
     if (usesVar(all, '世界書觸發')) vars.世界書觸發 = await worldText(trigger);
     if (usesVar(all, '角色啟用列表')) vars.角色啟用列表 = c8CharList(trigger);
     if (usesVar(all, '通用角色啟用列表')) vars.通用角色啟用列表 = c8CommonList();
     if (usesVar(all, '通用服裝啟用列表')) vars.通用服裝啟用列表 = c8OutfitList();
-    const msgs = entries
-        .map(e => ({ role: ['system', 'user', 'assistant'].includes(e.role) ? e.role : 'system', content: fill(e.content, vars).trim() }))
+    const named = entries
+        .map(e => ({ name: e.name || '', role: ['system', 'user', 'assistant'].includes(e.role) ? e.role : 'system', content: fill(e.content, vars).trim() }))
         .filter(m => m.content);
-    if (!msgs.some(m => m.role === 'user')) msgs.push({ role: 'user', content: vars.正文 });
-    // 包子預設的回得短；匯入的（像一帆那份）每張圖前面還有一大段思考，給多一點
-    const reply = await callModel(profile, msgs, { maxTokens: prompt.id === 'builtin' ? 2000 : 8192, temperature: 0.8 });
+    if (!named.some(m => m.role === 'user')) named.push({ name: '（正文）', role: 'user', content: vars.正文 });
+    const msgs = named.map(({ role, content }) => ({ role, content }));
+    // 📜 記下這次送了什麼、回了什麼（一帆 #162）
+    const log = { chat: chatKey(), mesId: opt.mesId, prompt: prompt.name, api: `${profile.name || ''}・${profile.model || ''}`,
+        demand: vars.用戶需求, sent: named, skipped };
+    let reply = '';
+    try {
+        // 包子預設的回得短；匯入的（像一帆那份）每張圖前面還有一大段思考，給多一點
+        reply = await callModel(profile, msgs, { maxTokens: prompt.id === 'builtin' ? 2000 : 8192, temperature: 0.8 });
+    } catch (e) {
+        addLog({ ...log, error: e.message }).catch(() => {});
+        throw e;
+    }
     const pics = parsePics(reply);
+    addLog({ ...log, reply, count: pics.length, ...(pics.length ? {} : { error: '模型沒照格式回 tag' }) }).catch(() => {});
     if (!pics.length) throw new Error('模型沒照格式回 tag：' + reply.slice(0, 80));
     for (const pic of pics) {
         if (!pic.after && pic.quote) pic.after = paraOfQuote(paras, pic.quote);
@@ -1397,7 +1418,7 @@ function itemHtml(it, i) {
     const working = st && !st.startsWith('❌');
     let head;
     if (working) head = `<div class="bzp-pill bzp-busy">${painterHtml(1)} ${label}<span class="bzp-pill-st">・${esc(st)}</span></div>`;
-    else if (!it.img) head = `<button class="bzp-pill bzp-todo" data-p="draw">🎨 ${label}</button>`;
+    else if (!it.img) head = `<button class="bzp-pill bzp-todo" data-p="draw">🎨 ${label}${it.cleared ? '<span class="bzp-pill-st">・圖清掉了，可以重畫</span>' : ''}</button>`;
     else head = `<button class="bzp-pill" data-p="fold">🖼️ ${label} <span class="bzp-caret">${openImg.has(it.id) ? '▾' : '▸'}</span></button>`;
     // 畫好的圖摺起來時 tag 也藏起來（tag 裡可能有 🔞 的字）
     const tagOpen = openTag.has(it.id) && (!it.img || openImg.has(it.id));
@@ -1446,6 +1467,7 @@ function zoneHtml(mesId, mes, isLast, loose) {
         ${writing ? statusHtml(writing) : askHtml(mesId)}
         <div class="bzp-actions bzp-foot">
             <button data-p="tags">✍️ 重寫 tag</button>
+            <button data-p="log" title="這次寫 tag 送了什麼、模型回了什麼">📜</button>
             ${items.some(it => !it.img) ? '<button data-p="drawall">🎨 全部畫</button>' : ''}
         </div>`;
 }
@@ -1538,6 +1560,113 @@ export function renderMes(mesId) {
     zone.innerHTML = html;
     zone.dataset.mes = String(mesId);
     localizeLive(zone);
+    watchGone(el, mesId);
+    rememberAlbum(items);
+}
+
+// ---------- 🧹 清掉舊的生圖（2.26.0，一帆 #162 選 A：圖存在酒館的圖片資料夾，越積越多佔手機空間） ----------
+// 包子存的檔名是 baozi_<時間>_xxxx，照時間刪 N 天前的（每個角色的資料夾都看）；存進相簿過的（store().keep）不刪。
+// 刪掉的那張在聊天裡變回「🎨 畫」，tag 還在。別的聊天的打開時才發現（圖讀不到、檔案 404）再標成清掉了。
+
+const normPath = (p) => String(p || '').replace(/^\/+/, '');
+
+async function stPost(url, body) {
+    const headers = stx()?.getRequestHeaders?.() || { 'Content-Type': 'application/json' };
+    const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body || {}) });
+    if (!res.ok) throw new Error(`${url}：${res.status}`);
+    const text = await res.text();
+    try { return JSON.parse(text); } catch { return text; }
+}
+
+function keepSet() {
+    return new Set((store().keep || []).map(normPath));
+}
+
+/** 2.26.0 以前存進相簿的：打開聊天時看到就補記進 keep（別被 🧹 清掉）。 */
+function rememberAlbum(items) {
+    const st = store();
+    const have = new Set((st.keep || []).map(normPath));
+    const add = items.filter(it => it.album && it.img && !it.img.startsWith('blob:') && !have.has(normPath(it.img))).map(it => normPath(it.img));
+    if (!add.length) return;
+    st.keep = [...have, ...add].slice(-3000);
+    saveStore();
+}
+
+const stamp = (path) => Number(String(path || '').split('/').pop().match(/^baozi_(\d{12,14})_/)?.[1]) || 0;
+
+/** 刪掉 days 天前的生圖檔。回 {removed, kept, failed}。 */
+export async function cleanOldImages(days = prefs().cleanDays) {
+    const d = Number(days);
+    if (!(d > 0)) return { removed: 0, kept: 0, failed: 0 };
+    const cutoff = Date.now() - d * 86_400_000;
+    for (const mes of stx()?.chat || []) if (isHusbandMes(mes)) rememberAlbum(itemsOf(mes));
+    const keep = keepSet();
+    let removed = 0, kept = 0, failed = 0;
+    const folders = await stPost('/api/images/folders', {});
+    for (const f of Array.isArray(folders) ? folders : []) {
+        const folder = typeof f === 'string' ? f : (f?.name || '');
+        if (!folder) continue;
+        let files = [];
+        try { files = await stPost('/api/images/list', { folder }); } catch { continue; }
+        for (const it of Array.isArray(files) ? files : []) {
+            const name = String(typeof it === 'string' ? it : (it?.name || it?.path || '')).split('/').pop();
+            const when = stamp(name);
+            if (!when || when >= cutoff) continue;
+            const path = `user/images/${folder}/${name}`;
+            if (keep.has(path)) { kept++; continue; }
+            try { await stPost('/api/images/delete', { path }); removed++; } catch { failed++; }
+        }
+    }
+    // 這個聊天裡被刪掉的那幾張：變回「🎨 畫」
+    const chat = stx()?.chat || [];
+    chat.forEach((mes, i) => {
+        if (!isHusbandMes(mes)) return;
+        const items = itemsOf(mes);
+        let changed = false;
+        for (const it of items) {
+            if (it.img && !it.img.startsWith('blob:') && stamp(it.img) && stamp(it.img) < cutoff && !keep.has(normPath(it.img))) {
+                it.img = null; it.cleared = true; it.album = false; changed = true;
+            }
+        }
+        if (changed) { setItems(mes, items); renderMes(i); }
+    });
+    saveChat();
+    return { removed, kept, failed };
+}
+
+/** 一天最多自動清一次（開著酒館 30 秒後）。 */
+async function autoClean() {
+    const days = Number(prefs().cleanDays);
+    if (!(days > 0)) return;
+    const today = new Date().toDateString();
+    try { if (localStorage.getItem('baozi_pics_cleaned') === today) return; localStorage.setItem('baozi_pics_cleaned', today); } catch { /* */ }
+    try {
+        const r = await cleanOldImages(days);
+        if (r.removed) toast(`🧹 清掉了 ${r.removed} 張 ${days} 天前的生圖`);
+    } catch (e) {
+        console.warn('[包子同好會] 自動清圖失敗', e);
+    }
+}
+
+/** 打開的圖讀不到：檔案真的不在了（404）就標成清掉了。 */
+function watchGone(el, mesId) {
+    el.querySelectorAll('img.bzp-img').forEach(img => {
+        if (img.dataset.chk) return;
+        img.dataset.chk = '1';
+        img.addEventListener('error', async () => {
+            const src = img.getAttribute('src') || '';
+            if (src.startsWith('blob:')) return;
+            let gone = false;
+            try { gone = (await fetch(src, { method: 'HEAD' })).status === 404; } catch { /* 連不上不算 */ }
+            if (!gone) return;
+            const { mes, items, item } = findItem(mesId, img.closest('[data-item]')?.dataset.item);
+            if (!item || item.img !== src) return;
+            item.img = null; item.cleared = true; item.album = false;
+            setItems(mes, items);
+            saveChat();
+            renderMes(mesId);
+        }, { once: true });
+    });
 }
 
 export function renderAll() {
@@ -1681,6 +1810,10 @@ async function saveAlbum(mesId, itemId, btn) {
             }).catch(() => {});
         }
         item.album = true;
+        // 存進相簿的不會被 🧹 清掉
+        const st = store();
+        st.keep = [...new Set([...(st.keep || []), normPath(item.img)])].slice(-3000);
+        saveStore();
         setItems(mes, itemsOf(mes));
         saveChat();
         renderMes(mesId);
@@ -1838,6 +1971,10 @@ function onZoneClick(ev) {
     if (a === 'tags') { askTags(mesId); return; }
     if (a === 'askgo') { makeTags(mesId, { demand: asking.get(mesId) || '' }); return; }
     if (a === 'askno') { asking.delete(mesId); renderMes(mesId); return; }
+    if (a === 'log') {
+        logFor(chatKey(), mesId).then(l => (l ? openLog(l) : toast('這則還沒有寫 tag 的紀錄（從 2.26.0 開始記）')));
+        return;
+    }
     if (a === 'artist') { openArtistPicker(() => renderAll()); return; }
     if (a === 'drawall') { itemsOf(stx().chat[mesId]).filter(it => !it.img).forEach(it => drawItem(mesId, it.id)); return; }
     if (!itemId) return;
@@ -1936,4 +2073,5 @@ export function startPics() {
     chatEl?.addEventListener('input', onAskInput);
     chatEl?.addEventListener('focusout', onTagEdit);
     all();
+    setTimeout(autoClean, 30_000);
 }

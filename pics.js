@@ -1288,7 +1288,8 @@ export async function writeTags(mesText, opt = {}) {
     const named = entries
         .map(e => ({ name: e.name || '', role: ['system', 'user', 'assistant'].includes(e.role) ? e.role : 'system', content: fill(e.content, vars).trim() }))
         .filter(m => m.content);
-    if (!named.some(m => m.role === 'user')) named.push({ name: '（正文）', role: 'user', content: vars.正文 });
+    // 沒有 user 的條目、而且整份都沒用到 {{正文}} 才補一段正文（一帆 #162：她的預設正文已經在條目裡，補了等於送兩次）
+    if (!named.some(m => m.role === 'user') && !usesVar(all, '正文')) named.push({ name: '（正文）', role: 'user', content: vars.正文 });
     const msgs = named.map(({ role, content }) => ({ role, content }));
     // 📜 記下這次送了什麼、回了什麼（一帆 #162）
     const log = { chat: chatKey(), mesId: opt.mesId, prompt: prompt.name, api: `${profile.name || ''}・${profile.model || ''}`,

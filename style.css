@@ -2501,7 +2501,10 @@ body.baozi-powersave .bzp-painter { animation: none; background-position: 100% 0
 .bzp-log-role { font-family: ui-monospace, Menlo, monospace; opacity: .7; }
 .bzp-log-pre { white-space: pre-wrap; word-break: break-word; max-height: 50vh; overflow: auto; font-size: 12px; margin: 6px 0;
     background: var(--SmartThemeShadowColor, rgba(0,0,0,.05)); border-radius: 6px; padding: 6px; }
-.bzp-log-reply { max-height: 40vh; }
+.bzp-log-reply { height: 45vh; max-height: none; resize: vertical; }
+/* 整個視窗往下滑；裡面的東西不要被擠扁 */
+.bzp-log-card > * { flex: none; }
+.bzp-log-sent summary { cursor: pointer; }
 .bzp-pill-st { opacity: .7; }
 .bzp-pill-mini {
     flex: none; cursor: pointer; font-size: 0.95em; padding: 5px 9px; border-radius: 10px; opacity: .8;

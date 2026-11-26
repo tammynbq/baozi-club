@@ -2493,6 +2493,15 @@ select.baozi-used-pick { width: auto; max-width: 9em; padding-right: 4px; }
 body.baozi-powersave .bzp-painter { animation: none; background-position: 100% 0; }
 .bzp-head-painter { display: inline-flex; align-items: center; margin-left: 6px; }
 .bzp-head-painter canvas { image-rendering: pixelated; }
+/* 📜 寫 tag 的紀錄（2.26.0） */
+.bzp-log-list { display: flex; flex-direction: column; gap: 6px; }
+.bzp-log-item { text-align: left; }
+.bzp-log-part { border: 1px solid var(--SmartThemeBorderColor, rgba(128,128,128,.3)); border-radius: 8px; padding: 4px 8px; margin: 4px 0; }
+.bzp-log-part summary { cursor: pointer; font-size: 0.9em; }
+.bzp-log-role { font-family: ui-monospace, Menlo, monospace; opacity: .7; }
+.bzp-log-pre { white-space: pre-wrap; word-break: break-word; max-height: 50vh; overflow: auto; font-size: 12px; margin: 6px 0;
+    background: var(--SmartThemeShadowColor, rgba(0,0,0,.05)); border-radius: 6px; padding: 6px; }
+.bzp-log-reply { max-height: 40vh; }
 .bzp-pill-st { opacity: .7; }
 .bzp-pill-mini {
     flex: none; cursor: pointer; font-size: 0.95em; padding: 5px 9px; border-radius: 10px; opacity: .8;

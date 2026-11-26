@@ -14,8 +14,34 @@ function toast(msg, kind = 'info') {
 
 const EXT = { 'image/jpeg': 'jpg', 'image/webp': 'webp', 'image/gif': 'gif' };
 
+/** 轉成 jpg（一帆 #162：檔案小很多，NovelAI 藏在 png 裡的提示詞也不會帶出去）。轉不了就照原檔。 */
+async function toJpeg(blob) {
+    if (blob.type === 'image/jpeg') return blob;
+    const url = URL.createObjectURL(blob);
+    try {
+        const img = await new Promise((resolve, reject) => {
+            const i = new Image();
+            i.onload = () => resolve(i);
+            i.onerror = reject;
+            i.src = url;
+        });
+        const c = document.createElement('canvas');
+        c.width = img.naturalWidth;
+        c.height = img.naturalHeight;
+        const x = c.getContext('2d');
+        x.fillStyle = '#ffffff';          // 透明的地方鋪白（jpg 沒有透明）
+        x.fillRect(0, 0, c.width, c.height);
+        x.drawImage(img, 0, 0);
+        return (await new Promise(r => c.toBlob(r, 'image/jpeg', 0.92))) || blob;
+    } catch {
+        return blob;
+    } finally {
+        URL.revokeObjectURL(url);
+    }
+}
+
 /**
- * 把一張圖存到手機。
+ * 把一張圖存到手機（轉成 jpg）。
  * @param src 圖的網址（同網域、blob:）或 Blob
  * @returns 'share'｜'cancel'｜'download'
  */
@@ -26,6 +52,7 @@ export async function saveImage(src, base = 'baozi') {
         if (!res.ok) throw new Error('讀不到這張圖');
         blob = await res.blob();
     }
+    blob = await toJpeg(blob);
     const type = blob.type || 'image/png';
     const name = `${base}-${Date.now()}.${EXT[type] || 'png'}`;
     try {

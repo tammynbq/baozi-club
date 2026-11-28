@@ -1561,7 +1561,7 @@ export function renderMes(mesId) {
     zone.innerHTML = html;
     zone.dataset.mes = String(mesId);
     localizeLive(zone);
-    watchGone(el, mesId);
+    watchGone(el);
     rememberAlbum(items);
 }
 
@@ -1649,25 +1649,121 @@ async function autoClean() {
     }
 }
 
-/** 打開的圖讀不到：檔案真的不在了（404）就標成清掉了。 */
-function watchGone(el, mesId) {
+/**
+ * 打開的圖讀不到：只在那張底下提示一句，不動存著的位置。
+ * （2.26.0 這裡會問酒館檔案在不在、說不在就清掉位置——一帆 #162：把圖收起來時正在載入的圖被拿掉，
+ *   手機當成讀失敗，TT 又不認得那種問法、回「找不到」，圖就被當成刪掉了。2.26.2 改掉，弄丟的用 recoverLost 找回來）
+ */
+function watchGone(el) {
     el.querySelectorAll('img.bzp-img').forEach(img => {
         if (img.dataset.chk) return;
         img.dataset.chk = '1';
-        img.addEventListener('error', async () => {
-            const src = img.getAttribute('src') || '';
-            if (src.startsWith('blob:')) return;
-            let gone = false;
-            try { gone = (await fetch(src, { method: 'HEAD' })).status === 404; } catch { /* 連不上不算 */ }
-            if (!gone) return;
-            const { mes, items, item } = findItem(mesId, img.closest('[data-item]')?.dataset.item);
-            if (!item || item.img !== src) return;
-            item.img = null; item.cleared = true; item.album = false;
-            setItems(mes, items);
-            saveChat();
-            renderMes(mesId);
+        img.addEventListener('error', () => {
+            if (!img.isConnected) return;          // 收起來、重畫時被拿掉的不算
+            if (img.parentElement?.querySelector('.bzp-missing')) return;
+            img.insertAdjacentHTML('afterend', `<div class="bzp-hint bzp-missing">${t('⚠️ 這張圖讀不到（可能被清掉了），可以按 🔁 重畫')}</div>`);
         }, { once: true });
     });
+}
+
+// ---------- 🧩 找回 2.26.0 弄丟的圖（2.26.2） ----------
+// 被當成清掉的那幾張（cleared），檔案其實還在。每張記得畫的時間（meta.at）和種子（meta.seed）；
+// 到酒館的圖片資料夾找那之後 30 分鐘內存的 baozi_ 檔，讀 PNG 裡 NovelAI 寫的種子對上了就接回去。
+// 檔案真的被 🧹 刪了的找不到，照樣是「🎨 畫」。
+
+/** NovelAI 存在 PNG 文字區塊（Comment）裡的種子。 */
+function pngSeed(buf) {
+    const u8 = new Uint8Array(buf);
+    if (!isPng(u8)) return null;
+    const dv = new DataView(buf);
+    for (let p = 8; p + 8 <= u8.length;) {
+        const len = dv.getUint32(p);
+        const type = String.fromCharCode(...u8.subarray(p + 4, p + 8));
+        if (type === 'IEND') break;
+        if (type === 'tEXt' || type === 'iTXt') {
+            const text = new TextDecoder().decode(u8.subarray(p + 8, p + 8 + len));
+            if (text.startsWith('Comment\0') && text.includes('{')) {
+                try {
+                    const j = JSON.parse(text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1));
+                    if (j.seed !== undefined) return Number(j.seed);
+                } catch { /* 不是 JSON */ }
+            }
+        }
+        p += 12 + len;
+    }
+    return null;
+}
+
+let recovering = false;
+
+/** 這個聊天裡被當成清掉、檔案其實還在的圖，接回去。回接回幾張。 */
+export async function recoverLost() {
+    const ctx = stx();
+    const chat = ctx?.chat;
+    if (!chat || recovering) return 0;
+    const lost = [];
+    chat.forEach((mes, i) => {
+        if (!isHusbandMes(mes)) return;
+        itemsOf(mes).forEach(it => { if (it.cleared && !it.img && it.meta?.at) lost.push({ i, it }); });
+    });
+    if (!lost.length) return 0;
+    recovering = true;
+    let found = 0;
+    try {
+        const used = new Set();
+        chat.forEach(mes => { if (isHusbandMes(mes)) itemsOf(mes).forEach(it => { if (it.img) used.add(normPath(it.img)); }); });
+        // 先找這張卡的資料夾，沒有再全部找
+        const folders = [ctx.name2, ...((await stPost('/api/images/folders', {}).catch(() => [])) || []).map(f => (typeof f === 'string' ? f : f?.name))]
+            .filter((f, k, a) => f && a.indexOf(f) === k);
+        const files = [];
+        for (const folder of folders) {
+            let list = [];
+            try { list = await stPost('/api/images/list', { folder }); } catch { continue; }
+            for (const f of Array.isArray(list) ? list : []) {
+                const name = String(typeof f === 'string' ? f : (f?.name || f?.path || '')).split('/').pop();
+                const when = stamp(name);
+                const path = `user/images/${folder}/${name}`;
+                if (when && !used.has(path)) files.push({ path, when });
+            }
+            if (folder === ctx.name2 && files.length) break;
+        }
+        files.sort((a, b) => a.when - b.when);
+        const seeds = new Map();
+        const seedOf = async (path) => {
+            if (!seeds.has(path)) {
+                let s = null;
+                try { const r = await fetch(path); if (r.ok) s = pngSeed(await r.arrayBuffer()); } catch { /* 讀不到 */ }
+                seeds.set(path, s);
+            }
+            return seeds.get(path);
+        };
+        lost.sort((a, b) => Date.parse(a.it.meta.at) - Date.parse(b.it.meta.at));
+        const changed = new Set();
+        for (const { i, it } of lost) {
+            const at = Date.parse(it.meta.at);
+            if (!at) continue;
+            const cands = files.filter(f => !used.has(f.path) && f.when >= at - 60_000 && f.when <= at + 30 * 60_000);
+            let hit = null;
+            for (const f of cands) {
+                const s = await seedOf(f.path);
+                if (s !== null && Number(it.meta.seed) === s) { hit = f; break; }
+            }
+            // 讀不到種子（第三方站可能把資料拿掉了）：那段時間只有一個檔才接
+            if (!hit && cands.length === 1 && (await seedOf(cands[0].path)) === null) hit = cands[0];
+            if (!hit) continue;
+            used.add(hit.path);
+            it.img = hit.path;
+            it.saved = true;
+            delete it.cleared;
+            changed.add(i);
+            found++;
+        }
+        for (const i of changed) { setItems(chat[i], itemsOf(chat[i])); renderMes(i); }
+        if (found) { saveChat(); toast(`🧩 找回了 ${found} 張之前不見的圖`, 'success'); }
+    } finally {
+        recovering = false;
+    }
+    return found;
 }
 
 export function renderAll() {
@@ -2052,7 +2148,7 @@ export function startPics() {
     if (!src || !ev) { console.warn('[包子同好會] 沒有酒館事件，生圖不開'); return; }
     started = true;
     const all = () => { setTimeout(() => { renderAll(); addMenuButtons(); }, 50); };
-    src.on(ev.CHAT_CHANGED, () => { seedLooks(); all(); });
+    src.on(ev.CHAT_CHANGED, () => { seedLooks(); all(); setTimeout(() => recoverLost().catch(() => {}), 3000); });
     for (const name of ['MESSAGE_SWIPED', 'MESSAGE_UPDATED', 'MESSAGE_EDITED', 'MESSAGE_DELETED', 'MORE_MESSAGES_LOADED']) {
         if (ev[name]) src.on(ev[name], all);
     }
@@ -2075,4 +2171,5 @@ export function startPics() {
     chatEl?.addEventListener('focusout', onTagEdit);
     all();
     setTimeout(autoClean, 30_000);
+    setTimeout(() => recoverLost().catch(() => {}), 5000);
 }
